@@ -7,6 +7,7 @@ from flask.testing import FlaskClient
 from api.app import create_app
 from api.config import ApiSettings
 from api.dependencies import build_dependencies
+from api.services import event_window
 from api.services.analytics import AnalyticsService
 from api.tests.factories import NOW
 from api.tests.fakes import FakeAnalyticsRepository, FakePublisher
@@ -18,6 +19,12 @@ API_KEY = "test-key"
 @pytest.fixture(autouse=True)
 def _reset_log_context() -> None:
     clear_context()
+
+
+@pytest.fixture(autouse=True)
+def _fixed_clock_for_event_window(monkeypatch: pytest.MonkeyPatch) -> None:
+    """Payloads in the tests carry fixed dates, so the accepted window must not drift."""
+    monkeypatch.setattr(event_window, "_utcnow", lambda: NOW)
 
 
 @pytest.fixture

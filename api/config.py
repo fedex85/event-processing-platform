@@ -26,6 +26,11 @@ class ApiSettings(BigQuerySettings):
     idempotency_ttl_seconds: int = Field(default=900, ge=1)
     idempotency_max_entries: int = Field(default=100_000, ge=1)
 
+    # Accepted range for occurred_at. The caps keep events inside what BigQuery can stream
+    # into a partitioned table (31 days back, 16 days ahead), with a day of margin.
+    max_event_age_days: int = Field(default=30, ge=1, le=30)
+    max_event_future_days: int = Field(default=15, ge=0, le=15)
+
     # Reads. With GCP_PROJECT_ID set the read endpoints query BigQuery; without it (local
     # development only) they return empty lists.
     bq_alerts_table: str = "stock_alerts"

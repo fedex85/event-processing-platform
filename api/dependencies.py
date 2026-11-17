@@ -17,6 +17,7 @@ from api.repositories import (
     EmptyAnalyticsRepository,
 )
 from api.services.analytics import AnalyticsService
+from api.services.event_window import EventTimeWindow
 from api.services.idempotency import InMemoryIdempotencyStore
 from api.services.ingestion import IngestionService
 from common.bigquery import GoogleBigQueryGateway
@@ -30,6 +31,7 @@ class Dependencies:
     analytics: AnalyticsService
     authenticator: ApiKeyAuthenticator
     rate_limiter: TokenBucketRateLimiter
+    event_window: EventTimeWindow
     max_batch_size: int
 
 
@@ -56,6 +58,10 @@ def build_dependencies(
         ),
         authenticator=ApiKeyAuthenticator(settings.api_key_set),
         rate_limiter=TokenBucketRateLimiter(settings.rate_limit_per_minute),
+        event_window=EventTimeWindow(
+            max_age=timedelta(days=settings.max_event_age_days),
+            max_future=timedelta(days=settings.max_event_future_days),
+        ),
         max_batch_size=settings.max_batch_size,
     )
 

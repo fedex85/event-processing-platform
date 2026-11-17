@@ -30,10 +30,11 @@ events_blueprint.before_request(authenticate_and_rate_limit)
 
 @events_blueprint.post("/events")
 def ingest_event() -> tuple[Response, int]:
-    event = parse_event(request.get_json())
+    dependencies = get_dependencies()
+    event = parse_event(request.get_json(), dependencies.event_window)
     bind_context(event_id=event.event_id, store_id=event.store_id, sku=event.sku)
 
-    [outcome] = get_dependencies().ingestion.ingest_many([event], trace_id=g.get("trace_id"))
+    [outcome] = dependencies.ingestion.ingest_many([event], trace_id=g.get("trace_id"))
     if outcome.status is IngestStatus.FAILED:
         raise PublishFailedError()
 
@@ -55,7 +56,7 @@ def ingest_batch() -> tuple[Response, int]:
     valid: list[tuple[int, StockEvent]] = []
     for index, raw in enumerate(raw_events):
         try:
-            valid.append((index, parse_event(raw)))
+            valid.append((index, parse_event(raw, dependencies.event_window)))
         except RejectedError as exc:
             results[index] = BatchResultItem(
                 index=index,

@@ -5,16 +5,23 @@ from typing import Any, Literal
 
 from pydantic import BaseModel, ValidationError
 
+from api.services.event_window import EventTimeWindow
 from common.errors import RejectedError
 from common.events import ErrorItem, StockEvent, to_error_items
 
 
-def parse_event(payload: Any) -> StockEvent:
-    """Validate a decoded JSON body, raising ``RejectedError`` (HTTP 400) if invalid."""
+def parse_event(payload: Any, window: EventTimeWindow | None = None) -> StockEvent:
+    """Validate a decoded JSON body, raising ``RejectedError`` (HTTP 400) if invalid.
+
+    With a ``window``, an ``occurred_at`` outside it is rejected too.
+    """
     try:
-        return StockEvent.model_validate(payload)
+        event = StockEvent.model_validate(payload)
     except ValidationError as exc:
         raise RejectedError(to_error_items(exc)) from exc
+    if window is not None and (problem := window.check(event.occurred_at)) is not None:
+        raise RejectedError([problem])
+    return event
 
 
 class AcceptedResponse(BaseModel):
