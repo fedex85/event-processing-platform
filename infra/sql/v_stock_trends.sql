@@ -1,7 +1,8 @@
 -- Hourly stock trends per store and SKU.
 --
--- Terraform renders this file with templatefile(); ${project_id} and ${dataset} are
--- template variables, not BigQuery syntax.
+-- This is the body of the view, not a DDL statement: Terraform passes it as the view's
+-- query after templatefile() fills in the project and dataset placeholders (they are
+-- template variables, not BigQuery syntax). To apply it by hand, see docs/runbook.md.
 --
 -- The first CTE drops duplicate events (best-effort insertId deduplication can let a
 -- few through). Duplicates share event_id AND occurred_at, so partitioning by both keeps
@@ -18,7 +19,6 @@
 --                    opening = previous_quantity of the first one (its own quantity
 --                    when previous_quantity is unknown)
 
-CREATE OR REPLACE VIEW `${project_id}.${dataset}.v_stock_trends` AS
 WITH events AS (
   SELECT *
   FROM `${project_id}.${dataset}.stock_events`
@@ -45,4 +45,4 @@ SELECT
     IGNORE NULLS ORDER BY occurred_at ASC, event_id ASC LIMIT 1
   )[SAFE_OFFSET(0)] AS stock_variation
 FROM events
-GROUP BY hour_start, store_id, sku;
+GROUP BY hour_start, store_id, sku

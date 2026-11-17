@@ -1,0 +1,13 @@
+# Copy to staging.tfvars (ignored by git) and fill in. Apply with:
+#   terraform apply -var-file=environments/staging.tfvars
+project_id          = "my-inventory-staging"
+environment         = "staging"
+region              = "europe-southwest1"
+bq_location         = "EU"
+deletion_protection = false
+
+# Workload Identity Federation for GitHub Actions (leave github_repository empty to skip).
+github_repository  = "owner/repository"
+github_environment = "staging"
+
+alert_email = ""

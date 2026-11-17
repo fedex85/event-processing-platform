@@ -1,0 +1,13 @@
+# Copy to prod.tfvars (ignored by git) and fill in. Apply with:
+#   terraform apply -var-file=environments/prod.tfvars
+project_id          = "my-inventory-prod"
+environment         = "prod"
+region              = "europe-southwest1"
+bq_location         = "EU"
+deletion_protection = true
+
+# Workload Identity Federation for GitHub Actions (leave github_repository empty to skip).
+github_repository  = "owner/repository"
+github_environment = "production"
+
+alert_email = ""

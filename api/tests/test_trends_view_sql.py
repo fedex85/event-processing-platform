@@ -34,8 +34,15 @@ def test_the_view_exposes_every_column_the_api_reads() -> None:
         assert re.search(rf"\b{column}\b", text), column
 
 
-def test_the_view_is_named_after_the_documented_model() -> None:
-    assert "VIEW `${project_id}.${dataset}.v_stock_trends`" in sql()
+def test_the_file_is_a_query_not_a_ddl_statement() -> None:
+    """Terraform passes the file as the view's query, so it must not create the view itself."""
+    statements = [
+        line for line in sql().splitlines() if line.strip() and not line.lstrip().startswith("--")
+    ]
+
+    assert statements[0].startswith("WITH ")
+    assert "CREATE" not in sql().upper().replace("-- ", "")
+    assert not sql().rstrip().endswith(";")
 
 
 def test_the_view_reads_the_events_table_and_groups_by_hour_store_and_sku() -> None:
@@ -71,3 +78,9 @@ def test_every_column_is_present_in_the_events_schema() -> None:
     used = {"event_id", "occurred_at", "ingested_at", "event_type", "quantity", "previous_quantity"}
 
     assert used <= columns
+
+
+def test_only_the_template_placeholders_terraform_provides_are_used() -> None:
+    placeholders = set(re.findall(r"\$\{(\w+)\}", sql()))
+
+    assert placeholders == {"project_id", "dataset"}
