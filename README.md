@@ -6,6 +6,17 @@ An event-driven platform that ingests stock changes from stores, processes them 
 
 > **Status: all five phases are written, tested and ready to deploy; the infrastructure has not been applied to a real Google Cloud project yet.** The API ingests and publishes events and serves alerts and hourly stock trends; the processor consumes events from Pub/Sub, deduplicates them by `event_id`, applies the alert rules and writes events and alerts to BigQuery. Terraform and the CI/CD pipeline are in place.
 
+## Verification status
+
+| Verified | Pending |
+|---|---|
+| 546 automated tests, `ruff`, `mypy` (run in CI on every push) | First deployment to a real Google Cloud project |
+| `terraform fmt` and `terraform validate` | Running the BigQuery adapters and SQL against real tables |
+| Docker images build in CI | Pub/Sub push delivery and the dead-letter flow end to end |
+| | Load test with the simulator against the deployed API |
+
+The remaining step is a staging deployment following [`docs/runbook.md`](docs/runbook.md#deploy). Until then, the cloud integrations are covered by tests with fakes, not by a live run.
+
 ## Contents
 
 [Architecture](#architecture) · [Roadmap](#roadmap) · [Getting started](#getting-started) · [API](#api) · [Deploy](#deploy) · [Publish to GitHub](#publish-to-github) · [Security](#security) · [Configuration](#configuration) · [Event contract](#event-contract) · [Technical decisions](#technical-decisions)

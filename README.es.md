@@ -6,6 +6,17 @@ Plataforma orientada a eventos que recibe cambios de stock de tiendas, los proce
 
 > **Estado: las cinco fases están escritas, probadas y listas para desplegar; la infraestructura todavía no se ha aplicado a un proyecto real de Google Cloud.** La API recibe y publica eventos y sirve alertas y tendencias de stock por hora; el procesador consume los eventos de Pub/Sub, los deduplica por `event_id`, aplica las reglas de alerta y escribe eventos y alertas en BigQuery. Terraform y el pipeline de CI/CD están listos.
 
+## Estado de verificación
+
+| Verificado | Pendiente |
+|---|---|
+| 546 tests automáticos, `ruff`, `mypy` (se ejecutan en el CI en cada push) | Primer despliegue en un proyecto real de Google Cloud |
+| `terraform fmt` y `terraform validate` | Ejecutar los adaptadores de BigQuery y el SQL contra tablas reales |
+| Las imágenes Docker se construyen en el CI | Entrega push de Pub/Sub y flujo de dead-letter de extremo a extremo |
+| | Prueba de carga con el simulador contra la API desplegada |
+
+El paso que falta es un despliegue en staging siguiendo [`docs/runbook.md`](docs/runbook.md#deploy). Hasta entonces, las integraciones con la nube están cubiertas por tests con dobles, no por una ejecución real.
+
 ## Contenido
 
 [Arquitectura](#arquitectura) · [Hoja de ruta](#hoja-de-ruta) · [Puesta en marcha](#puesta-en-marcha) · [API](#api) · [Despliegue](#despliegue) · [Subir a GitHub](#subir-a-github) · [Seguridad](#seguridad) · [Configuración](#configuración) · [Contrato del evento](#contrato-del-evento) · [Decisiones técnicas](#decisiones-técnicas)
