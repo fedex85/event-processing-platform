@@ -1,6 +1,6 @@
 # Runbook
 
-Operational procedures are added as the system gains something to operate. Local development, querying alerts and trends, and the read-side IAM are covered; deployment arrives with Phase 5.
+How to run, deploy and operate the platform. Cloud steps use `$PROJECT` for the GCP project of the environment and `$REGION` for its region (`europe-southwest1` by default).
 
 ## Run locally
 
@@ -78,11 +78,13 @@ Without `GCP_PROJECT_ID` both return empty lists: the API does not share memory 
 
 ### Create or update the view
 
-`infra/sql/v_stock_trends.sql` contains `${project_id}` and `${dataset}` placeholders (Terraform fills them in Phase 5). To apply it by hand:
+Terraform creates the view (`infra/modules/bigquery`). `infra/sql/v_stock_trends.sql` is the view's query, with `${project_id}` and `${dataset}` placeholders that Terraform fills in. To apply it by hand, wrap it in a `CREATE OR REPLACE VIEW` statement:
 
 ```bash
-sed -e "s/\${project_id}/$PROJECT/g" -e "s/\${dataset}/inventory_analytics/g" \
-  infra/sql/v_stock_trends.sql | bq query --use_legacy_sql=false
+{
+  echo "CREATE OR REPLACE VIEW \`$PROJECT.inventory_analytics.v_stock_trends\` AS"
+  sed -e "s/\${project_id}/$PROJECT/g" -e "s/\${dataset}/inventory_analytics/g" infra/sql/v_stock_trends.sql
+} | bq query --use_legacy_sql=false
 ```
 
 ### Check the view prunes partitions
@@ -106,6 +108,107 @@ A query that exceeds `BQ_MAX_BYTES_BILLED` fails with `500 analytics_error` (the
 
 A `503 analytics_unavailable` that never clears usually means a missing `jobUser` role or a wrong `BQ_DATASET`; check the logs for the BigQuery error reason.
 
-## Planned
+## Deploy
 
-Deployment, rollback and dead-letter queue replay are documented in Phase 5 (they depend on the Terraform resources).
+The infrastructure is Terraform (`infra/`); the images are built and deployed by GitHub Actions. Use one GCP project per environment (`staging`, `prod`), each with its own state and its own `environments/<name>.tfvars`.
+
+### One-time setup of an environment
+
+1. Create the project, link billing and sign in: `gcloud auth application-default login`.
+2. Create the state bucket (versioned, private). Terraform cannot create the bucket that stores its own state:
+
+   ```bash
+   gcloud storage buckets create "gs://$PROJECT-tfstate" --project "$PROJECT" \
+     --location "$REGION" --uniform-bucket-level-access --public-access-prevention
+   gcloud storage buckets update "gs://$PROJECT-tfstate" --versioning
+   ```
+
+3. Configure and initialise:
+
+   ```bash
+   cd infra
+   cp environments/staging.tfvars.example environments/staging.tfvars   # edit the values
+   terraform init -backend-config="bucket=$PROJECT-tfstate" -backend-config="prefix=staging"
+   ```
+
+4. Create the API-keys secret first. Cloud Run refuses to start a revision whose secret has no version, and the key itself must never pass through Terraform state:
+
+   ```bash
+   terraform apply -var-file=environments/staging.tfvars -target=module.secrets
+   python -c "import secrets; print(secrets.token_urlsafe(32))" | \
+     gcloud secrets versions add inventory-api-keys --data-file=- --project "$PROJECT"
+   ```
+
+   Several keys go in one version separated by commas. Each needs at least 24 characters.
+
+5. Apply everything: `terraform plan -var-file=environments/staging.tfvars`, review, then `terraform apply -var-file=environments/staging.tfvars`. The first apply runs a placeholder image; the first CI deployment replaces it.
+
+   If it fails with a message that the Pub/Sub service account does not exist, run `gcloud beta services identity create --service=pubsub.googleapis.com --project "$PROJECT"` and apply again.
+
+6. In GitHub, create the environments `staging` and `production` (add required reviewers to `production`) and set these variables on each, from `terraform output`:
+
+   | Variable | Value |
+   |---|---|
+   | `GCP_PROJECT_ID` | the environment's project |
+   | `GCP_REGION` | `$REGION` |
+   | `GCP_WORKLOAD_IDENTITY_PROVIDER` | `github_workload_identity_provider` output |
+   | `GCP_DEPLOYER_SERVICE_ACCOUNT` | `github_deployer_service_account` output |
+
+   No secrets are needed: GitHub Actions authenticates to Google with its own OIDC token (Workload Identity Federation), restricted to this repository and environment.
+
+### Deploying
+
+- **Staging** deploys by itself when CI passes on `main`: the workflow builds both images, tags them with the commit, deploys the processor, then the API, and calls `/v1/health`.
+- **Production** is manual: Actions, Deploy, Run workflow, choose `production` and a tag or commit. The job waits for the approval configured on the `production` environment.
+
+Infrastructure changes are applied by hand with `terraform plan` / `apply`; the workflows only deploy images.
+
+### Roll back
+
+Send traffic to the previous revision (instant, no build):
+
+```bash
+gcloud run revisions list --service inventory-api --region "$REGION" --project "$PROJECT"
+gcloud run services update-traffic inventory-api --region "$REGION" --project "$PROJECT" \
+  --to-revisions <previous-revision>=100
+```
+
+Do the same for `inventory-processor` if needed. To redeploy an older commit instead, run the Deploy workflow with that ref.
+
+### Check the Terraform code without cloud access
+
+```bash
+cd infra && terraform fmt -recursive && terraform init -backend=false && terraform validate
+```
+
+CI runs the same commands. `pytest` also runs structural checks on the Terraform files.
+
+## Dead-letter queue
+
+After `MAX_DELIVERY_ATTEMPTS` (5) failed deliveries Pub/Sub moves a message to `stock-events-dlq`, and an alert fires when it holds messages. The `stock-events-dlq-pull` subscription keeps them for 7 days.
+
+Inspect without removing them:
+
+```bash
+gcloud pubsub subscriptions pull stock-events-dlq-pull --project "$PROJECT" --limit 5 --format json
+```
+
+`message.data` is base64 of the event. Find why it failed (the processor's logs carry the `message_id`; a `400` means a malformed message, a `500` a storage problem), then:
+
+- **Fixed the cause and the event is valid:** republish it to the main topic. Replays are safe because the processor ignores `event_id`s it already stored.
+
+  ```bash
+  gcloud pubsub subscriptions pull stock-events-dlq-pull --project "$PROJECT" --auto-ack --limit 50 --format json \
+    | jq -r '.[].message.data' | while read -r data; do
+        gcloud pubsub topics publish stock-events --project "$PROJECT" \
+          --message "$(echo "$data" | base64 -d)" --attribute schema_version=1
+      done
+  ```
+
+- **The message is garbage:** acknowledge it (`--auto-ack`) to discard it.
+
+## Rotate API keys
+
+1. Add a version containing the old and the new key: `echo "old-key,new-key" | gcloud secrets versions add inventory-api-keys --data-file=- --project "$PROJECT"`.
+2. Start a new revision so instances re-read the secret: `gcloud run services update inventory-api --region "$REGION" --project "$PROJECT" --update-env-vars KEYS_ROTATED_AT=$(date +%s)`.
+3. Move clients to the new key, then repeat with only the new key.

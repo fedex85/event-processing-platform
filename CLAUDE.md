@@ -46,4 +46,6 @@ Run from the repository root with `make` (Linux, macOS, WSL, Git Bash). Override
 
 The project is built in phases (see `README.md`). Finish one phase, run `make check`, report files changed, commands, risks and the next phase, and wait for confirmation before continuing. Every endpoint needs tests and every business rule needs unit tests, using fixtures and factories (`api/tests/factories.py`, `processor/tests/factories.py`).
 
+Infrastructure is Terraform in `infra/` (modules under `infra/modules/`). Check it with `cd infra && terraform fmt -recursive && terraform init -backend=false && terraform validate`; `common/tests/test_terraform_structure.py` checks module inputs and references without Terraform. Never put secrets or service account keys in Terraform; the API-keys secret value is added by hand.
+
 BigQuery table schemas live in `infra/schemas/*.json` (single source of truth for Terraform); a test checks they match what the repository writes.

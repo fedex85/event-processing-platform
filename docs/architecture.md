@@ -141,6 +141,37 @@ The adapter is behind `EventRepository` / `AlertRepository`, so a Storage Write 
 
 Known risk: partition pruning through the view is not guaranteed. Check it with `bq query --dry_run` (see the runbook) and, if the bytes processed are too high, replace the view with a table function.
 
+## Infrastructure (Terraform)
+
+One root module (`infra/`) composes small modules; each environment is the same code with its own project and `tfvars`.
+
+| Module | Creates |
+|---|---|
+| `apis` | Enables the Google APIs the platform uses |
+| `service_accounts` | Runtime accounts for the API, the processor and the Pub/Sub push subscription, with `bigquery.jobUser` |
+| `artifact_registry` | Docker repository with cleanup policies |
+| `secrets` | The API-keys secret (container only, no value) and its reader |
+| `bigquery` | Dataset, `stock_events` (partitioned by `occurred_at`) and `stock_alerts` (partitioned by `detected_at`), both clustered by `store_id, sku`, the `v_stock_trends` view, and dataset-level grants |
+| `cloud_run_service` | A Cloud Run service (used for the API and the processor) |
+| `pubsub` | Topic, push subscription with OIDC, retry backoff, dead-letter topic and pull subscription, agent grants |
+| `github_wif` | Workload Identity Federation for GitHub Actions and the deployer account (optional) |
+| `monitoring` | Alert policies: dead-letter messages, processor backlog, 5xx per service; optional email channel |
+
+| Decision | Reason |
+|---|---|
+| The processor is not publicly invokable; only the push subscription's service account has `run.invoker`, and Pub/Sub signs an OIDC token for it | The processor has no authentication of its own |
+| Terraform creates the services with a placeholder image and ignores later image changes | The images do not exist before the first deployment, and CI owns every release after that. Infrastructure and releases change independently |
+| The secret's value is added by hand | Keeps the keys out of Terraform state and the repository |
+| Least-privilege IAM at dataset, topic, secret and repository level | The API can read but not write BigQuery; the processor can append but cannot publish |
+| Dead-letter after 5 attempts with 10 s to 600 s backoff, 7-day retention | A transient outage is retried for about an hour; a message that can never succeed stops blocking and stays inspectable |
+| `ack_deadline` 60 s, request timeout 60 s | A worst-case run (three BigQuery operations with retries) fits |
+| Cloud Run concurrency 16 | Matches gunicorn's 2 workers x 8 threads |
+| `max_instances` per service | Bounds the cost of a traffic spike and the write pressure on BigQuery |
+| One GCP project, one state prefix and one set of GitHub environment variables per environment | Staging mistakes cannot touch production |
+| Workload Identity Federation restricted to the repository (and environment) | No long-lived service account keys exist |
+
+Known limit: none of this has been applied to a real project yet. Run `terraform plan` and review it before the first apply.
+
 ## Planned
 
-Pub/Sub retry and dead-letter configuration and Terraform (Phase 5). Table schemas already live in `infra/schemas/`; the view definition is `infra/sql/v_stock_trends.sql` (a `templatefile` input for Terraform).
+A shared rate-limit and idempotency store, alert cooldown, the remaining rules (sales spike, store without data) and a Storage Write API adapter are outside the current scope.

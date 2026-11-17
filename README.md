@@ -2,7 +2,7 @@
 
 An event-driven platform that ingests stock changes from stores, processes them asynchronously and turns them into alerts and trends. It is a portfolio project built to show production-minded backend work: API design, asynchronous processing, spike absorption, idempotency, observability and cloud-native deployment on Google Cloud.
 
-> **Status: Phase 4 of 5 (analytics).** The API ingests and publishes events and serves alerts and hourly stock trends; the processor consumes events from Pub/Sub, deduplicates them by `event_id`, applies the alert rules and writes events and alerts to BigQuery. Infrastructure (Terraform, CI/CD) lands in the next phase.
+> **Status: Phase 5 of 5 (infrastructure) written, not yet applied to a real project.** The API ingests and publishes events and serves alerts and hourly stock trends; the processor consumes events from Pub/Sub, deduplicates them by `event_id`, applies the alert rules and writes events and alerts to BigQuery. Terraform and the CI/CD pipeline are in place.
 
 ## Architecture
 
@@ -40,7 +40,7 @@ Each service keeps a light hexagonal layout: entry points (`routes`, `consumers`
 | 2 | Ingestion: `POST /v1/events`, `:batch`, API keys, Pub/Sub publishing, idempotency, rate limiting, simulator | Done |
 | 3 | Processing: push endpoint, BigQuery writes, deduplication, retries, DLQ-ready errors, alert rules | Done (BigQuery adapter not yet run against a real project) |
 | 4 | Analytics: `GET /v1/alerts`, `GET /v1/metrics/stock-trends`, `v_stock_trends` view | Done (SQL not yet run against a real project) |
-| 5 | Infrastructure: Terraform, CI/CD, runbook | Next |
+| 5 | Infrastructure: Terraform, CI/CD, runbook | Done (never applied to a real project) |
 
 ## Getting started
 
@@ -85,6 +85,16 @@ docker run --rm -p 8080:8080 inventory-api:local
 | `POST /internal/pubsub` | (processor) Pub/Sub push endpoint; not for clients, protected by Cloud Run IAM |
 
 Requests carry an `X-API-Key` header. Details, status codes and examples are in [`docs/api.md`](docs/api.md).
+
+## Deploy
+
+Terraform (`infra/`) creates Cloud Run, Pub/Sub with a dead-letter queue, BigQuery, Secret Manager, Artifact Registry, IAM, Workload Identity Federation for GitHub Actions and Cloud Monitoring alerts. GitHub Actions deploys: staging automatically from `main`, production on manual approval. The step-by-step procedure (state bucket, secret, first apply, GitHub variables, rollback, dead-letter replay) is in [`docs/runbook.md`](docs/runbook.md#deploy).
+
+```bash
+cd infra
+terraform init -backend-config="bucket=<state-bucket>" -backend-config="prefix=staging"
+terraform plan -var-file=environments/staging.tfvars
+```
 
 ## Security
 
@@ -131,7 +141,7 @@ Validation is strict: integers must be real integers, `occurred_at` must be an I
 - **`202` means Pub/Sub has the event.** The API waits for the broker's confirmation, so a client can retry safely; it never reports success for an event that was not published.
 - **Per-process idempotency and rate limiting** (no Redis): both are optimizations in front of Pub/Sub. The processor deduplicates by `event_id` in BigQuery, so they cannot cause data loss or duplicates downstream.
 - **The event row is the commit marker.** The processor writes alerts first and the event last, so a failure at any point is repaired by Pub/Sub's redelivery. Alerts have deterministic ids, so a retry never creates a second alert.
-- **Poison messages get `400`, storage trouble gets `503`.** Pub/Sub's dead-letter policy (Phase 5) moves a message aside after N failed deliveries; nothing is silently dropped.
+- **Poison messages get `400`, storage trouble gets `503`.** Pub/Sub's dead-letter policy moves a message aside after N failed deliveries; nothing is silently dropped.
 - **`insert_rows_json` instead of the Storage Write API**, with `insertId`, retries and a documented trade-off (see `processor/repositories/bigquery.py`). The adapter sits behind a port, so a Storage Write API adapter can replace it later.
 
 More detail in [`docs/architecture.md`](docs/architecture.md) and [`docs/api.md`](docs/api.md).
