@@ -7,6 +7,9 @@ from pydantic import Field, SecretStr, field_validator, model_validator
 from common.retry import RetryPolicy
 from common.settings import BaseServiceSettings
 
+# Generate keys with e.g. `python -c "import secrets; print(secrets.token_urlsafe(32))"`.
+MIN_API_KEY_LENGTH = 24
+
 
 class ApiSettings(BaseServiceSettings):
     service_name: str = "inventory-api"
@@ -53,6 +56,14 @@ class ApiSettings(BaseServiceSettings):
     def _require_api_keys_outside_local(self) -> Self:
         if self.environment != "local" and not self.api_key_set:
             raise ValueError("API_KEYS is required when ENVIRONMENT is not 'local'")
+        return self
+
+    @model_validator(mode="after")
+    def _require_strong_api_keys_outside_local(self) -> Self:
+        if self.environment != "local" and any(
+            len(key) < MIN_API_KEY_LENGTH for key in self.api_key_set
+        ):
+            raise ValueError(f"every API key must have at least {MIN_API_KEY_LENGTH} characters")
         return self
 
     @model_validator(mode="after")

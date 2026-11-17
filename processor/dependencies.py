@@ -43,7 +43,9 @@ def _build_repository(settings: ProcessorSettings) -> BigQueryRepository | InMem
     """BigQuery when a project is configured; otherwise in memory (local development only)."""
     if settings.gcp_project_id:
         return BigQueryRepository(
-            GoogleBigQueryGateway.from_project(settings.gcp_project_id),
+            GoogleBigQueryGateway.from_project(
+                settings.gcp_project_id, maximum_bytes_billed=settings.bq_max_bytes_billed
+            ),
             project_id=settings.gcp_project_id,
             dataset=settings.bq_dataset,
             events_table=settings.bq_events_table,

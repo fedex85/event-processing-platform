@@ -6,6 +6,7 @@ payload. Validation is strict on purpose: numbers must be real integers (no
 unknown fields are rejected.
 """
 
+import json
 import re
 from datetime import UTC, datetime
 from enum import StrEnum
@@ -27,6 +28,10 @@ from pydantic_core import ErrorDetails
 
 NonEmptyStr = Annotated[str, StringConstraints(strip_whitespace=True, min_length=1, max_length=255)]
 NonNegativeInt = Annotated[StrictInt, Field(ge=0)]
+
+# Pub/Sub, BigQuery and the request limit all have ceilings; free-form metadata must not
+# be the way to hit them.
+MAX_METADATA_BYTES = 4096
 
 # Requires a date, a time and the "T" (or space) separator. This keeps out
 # values that pydantic would otherwise coerce, such as "2026-11-16" or the
@@ -76,7 +81,7 @@ class StockEvent(BaseModel):
     quantity: NonNegativeInt
     previous_quantity: NonNegativeInt | None = None
     unit: NonEmptyStr = "units"
-    occurred_at: datetime
+    occurred_at: IsoTimestamp
     source: NonEmptyStr
     metadata: dict[str, Any] = Field(default_factory=dict)
 
@@ -86,30 +91,22 @@ class StockEvent(BaseModel):
         # An explicit ``null`` is treated like an omitted ``event_id``.
         return new_event_id() if value is None else value
 
-    @field_validator("occurred_at", mode="before")
+    @field_validator("metadata", mode="after")
     @classmethod
-    def _require_iso_8601_string(cls, value: Any) -> Any:
-        if isinstance(value, datetime):
-            return value
-        if not isinstance(value, str) or not _ISO_8601_RE.match(value):
-            raise ValueError("must be an ISO 8601 timestamp (e.g. 2026-11-16T19:40:12Z)")
+    def _metadata_is_small_plain_json(cls, value: dict[str, Any]) -> dict[str, Any]:
+        try:
+            encoded = json.dumps(value, allow_nan=False, separators=(",", ":"), ensure_ascii=False)
+        except (ValueError, RecursionError) as exc:
+            raise ValueError("must hold plain JSON: finite numbers and limited nesting") from exc
+        if len(encoded.encode("utf-8")) > MAX_METADATA_BYTES:
+            raise ValueError(f"must be at most {MAX_METADATA_BYTES} bytes when encoded as JSON")
         return value
-
-    @field_validator("occurred_at", mode="after")
-    @classmethod
-    def _require_timezone(cls, value: datetime) -> datetime:
-        return _require_utc(value)
 
 
 class IngestedStockEvent(StockEvent):
     """The message ``inventory-api`` publishes to Pub/Sub: the event plus its ingestion time."""
 
-    ingested_at: datetime
-
-    @field_validator("ingested_at", mode="after")
-    @classmethod
-    def _ingested_at_is_utc(cls, value: datetime) -> datetime:
-        return _require_utc(value)
+    ingested_at: IsoTimestamp
 
 
 class ErrorItem(BaseModel):

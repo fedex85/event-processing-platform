@@ -3,6 +3,7 @@
 from flask import Flask
 
 from common.errors import register_error_handlers
+from common.hardening import apply_hardening
 from common.health import HEALTH_PATH, health_blueprint
 from common.request_context import register_request_context
 from common.structured_logging import configure_logging
@@ -27,6 +28,7 @@ def create_app(
     app.extensions["settings"] = settings
     app.extensions["dependencies"] = dependencies or build_dependencies(settings)
 
+    apply_hardening(app, max_request_bytes=settings.max_request_bytes)
     register_request_context(app, quiet_paths=frozenset({HEALTH_PATH}))
     register_error_handlers(app)
     app.register_blueprint(health_blueprint)

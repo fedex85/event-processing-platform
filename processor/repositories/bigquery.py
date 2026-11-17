@@ -13,7 +13,7 @@ Limitations to keep in mind:
 
 * ``insertId`` deduplication is best effort. Two instances handling the same
   duplicate at the same instant can both insert; the analytics views must
-  deduplicate by ``event_id`` (Phase 4).
+  deduplicate by ``event_id``: ``v_stock_trends`` and the alerts query do.
 * Streaming-buffer rows cannot be changed with ``UPDATE`` or ``DELETE`` for a
   while, so this pipeline only ever appends.
 * It is billed per ingested byte, unlike the Storage Write API's free default stream.
@@ -25,21 +25,23 @@ with a fake.
 
 import json
 import logging
-import re
 from collections.abc import Callable, Sequence
 from datetime import timedelta
 from typing import Any
 
-from common.bigquery import BigQueryGateway, QueryParam, RowErrors, is_transient_exception
+from common.bigquery import (
+    BigQueryGateway,
+    QueryParam,
+    RowErrors,
+    is_transient_exception,
+    qualified_name,
+)
 from common.events import IngestedStockEvent
 from common.retry import RetryPolicy, call_with_retry
 from processor.domain.errors import PermanentStorageError, TransientStorageError
 from processor.domain.models import Alert, EventLookup, ProcessingStatus
 
 logger = logging.getLogger(__name__)
-
-_PROJECT_ID_RE = re.compile(r"^[a-z][a-z0-9\-:.]{4,61}[a-z0-9]$")
-_IDENTIFIER_RE = re.compile(r"^[A-Za-z_][A-Za-z0-9_]{0,1023}$")
 
 # Row-level reasons from insertAll that are worth retrying. "stopped" only means a
 # sibling row in the same request failed, so it says nothing by itself.
@@ -78,15 +80,9 @@ class BigQueryRepository:
         timeout_seconds: float,
         sleep: Callable[[float], None] | None = None,
     ) -> None:
-        # These names are placed inside SQL and table paths, so fail fast on anything odd.
-        if not _PROJECT_ID_RE.fullmatch(project_id):
-            raise ValueError(f"invalid BigQuery project id: {project_id!r}")
-        for name in (dataset, events_table, alerts_table):
-            if not _IDENTIFIER_RE.fullmatch(name):
-                raise ValueError(f"invalid BigQuery identifier: {name!r}")
         self._gateway = gateway
-        self._events_table = f"{project_id}.{dataset}.{events_table}"
-        self._alerts_table = f"{project_id}.{dataset}.{alerts_table}"
+        self._events_table = qualified_name(project_id, dataset, events_table)
+        self._alerts_table = qualified_name(project_id, dataset, alerts_table)
         self._retry_policy = retry_policy
         self._timeout_seconds = timeout_seconds
         self._sleep = sleep

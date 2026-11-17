@@ -17,6 +17,10 @@ class BaseServiceSettings(BaseSettings):
     log_level: LogLevel = "INFO"
     port: int = Field(default=8080, ge=1, le=65535)
     gcp_project_id: str | None = None
+    # Requests larger than this are refused with 413 before the body is read in full.
+    max_request_bytes: int = Field(default=1_048_576, ge=1024, le=10_485_760)
+    # BigQuery refuses queries that would scan more than this (the minimum billed is 10 MB).
+    bq_max_bytes_billed: int = Field(default=1_000_000_000, ge=10_000_000)
 
     @field_validator("environment", mode="before")
     @classmethod

@@ -5,6 +5,8 @@ from pydantic import ValidationError
 
 from api.config import ApiSettings
 
+STRONG_KEY = "k" * 32
+
 
 def load(**overrides: Any) -> ApiSettings:
     return ApiSettings(**overrides)
@@ -30,7 +32,7 @@ def test_defaults_are_suitable_for_local_development() -> None:
 def test_values_come_from_environment_variables(monkeypatch: pytest.MonkeyPatch) -> None:
     monkeypatch.setenv("ENVIRONMENT", "staging")
     monkeypatch.setenv("GCP_PROJECT_ID", "my-project")
-    monkeypatch.setenv("API_KEYS", "k1")
+    monkeypatch.setenv("API_KEYS", STRONG_KEY)
     monkeypatch.setenv("PUBSUB_TOPIC_ID", "stock-events")
     monkeypatch.setenv("PORT", "9000")
 
@@ -68,14 +70,14 @@ def test_api_keys_are_required_outside_local() -> None:
 
 def test_topic_is_required_outside_local() -> None:
     with pytest.raises(ValidationError, match="PUBSUB_TOPIC_ID is required"):
-        load(environment="prod", gcp_project_id="my-project", api_keys="k1")
+        load(environment="prod", gcp_project_id="my-project", api_keys=STRONG_KEY)
 
 
 def test_a_fully_configured_production_setup_is_valid() -> None:
     settings = load(
         environment="prod",
         gcp_project_id="my-project",
-        api_keys="k1",
+        api_keys=STRONG_KEY,
         pubsub_topic_id="stock-events",
     )
 
@@ -166,3 +168,33 @@ def test_read_settings_come_from_the_environment(monkeypatch: pytest.MonkeyPatch
 def test_invalid_read_settings_are_rejected(overrides: dict[str, float]) -> None:
     with pytest.raises(ValidationError):
         ApiSettings.model_validate({"environment": "local", "api_keys": "k", **overrides})
+
+
+# --- hardening ---
+
+
+def test_short_api_keys_are_rejected_outside_local() -> None:
+    with pytest.raises(ValidationError, match="at least 24 characters"):
+        load(
+            environment="prod",
+            gcp_project_id="my-project",
+            pubsub_topic_id="stock-events",
+            api_keys=f"{STRONG_KEY},short",
+        )
+
+
+def test_short_api_keys_are_fine_locally() -> None:
+    assert load(api_keys="k").api_key_set == frozenset({"k"})
+
+
+def test_request_and_query_cost_limits_have_safe_defaults() -> None:
+    settings = load()
+
+    assert settings.max_request_bytes == 1_048_576
+    assert settings.bq_max_bytes_billed == 1_000_000_000
+
+
+@pytest.mark.parametrize("overrides", [{"max_request_bytes": 10}, {"bq_max_bytes_billed": 1}])
+def test_limits_cannot_be_set_to_useless_values(overrides: dict[str, int]) -> None:
+    with pytest.raises(ValidationError):
+        ApiSettings.model_validate({"environment": "local", **overrides})

@@ -4,7 +4,7 @@ import pytest
 from pydantic import ValidationError
 
 from api.tests.factories import make_event_payload
-from common.events import IngestedStockEvent, StockEvent
+from common.events import IngestedStockEvent, StockEvent, to_error_items
 
 
 def ingested_payload(**overrides: object) -> dict[str, object]:
@@ -39,3 +39,43 @@ def test_the_pubsub_message_round_trips_through_json() -> None:
     decoded = IngestedStockEvent.model_validate_json(original.model_dump_json())
 
     assert decoded == original
+
+
+# --- metadata limits ---
+
+
+def _event(**overrides: object) -> dict[str, object]:
+    return {
+        "store_id": "s",
+        "sku": "k",
+        "event_type": "SALE",
+        "quantity": 1,
+        "occurred_at": "2026-11-16T19:40:12Z",
+        "source": "pos",
+        **overrides,
+    }
+
+
+def test_metadata_over_the_size_limit_is_rejected() -> None:
+    with pytest.raises(ValidationError) as caught:
+        StockEvent.model_validate(_event(metadata={"blob": "x" * 5000}))
+
+    [item] = to_error_items(caught.value)
+    assert item.field == "metadata"
+    assert "4096 bytes" in item.message
+
+
+def test_metadata_at_the_limit_is_accepted() -> None:
+    padding = "x" * (4096 - len('{"b":""}'))
+
+    assert StockEvent.model_validate(_event(metadata={"b": padding})).metadata["b"] == padding
+
+
+def test_metadata_may_not_hold_non_finite_numbers() -> None:
+    with pytest.raises(ValidationError):
+        StockEvent.model_validate(_event(metadata={"ratio": float("nan")}))
+
+
+def test_metadata_size_counts_bytes_not_characters() -> None:
+    with pytest.raises(ValidationError):
+        StockEvent.model_validate(_event(metadata={"b": "ñ" * 2500}))

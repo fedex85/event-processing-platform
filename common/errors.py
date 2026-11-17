@@ -82,6 +82,11 @@ def register_error_handlers(app: Flask) -> None:
             response.headers["Allow"] = ", ".join(exc.valid_methods)
         return response, status_code
 
+    @app.errorhandler(RecursionError)
+    def handle_too_deeply_nested(_exc: RecursionError) -> tuple[Response, int]:
+        # The JSON parser hits Python's recursion limit on absurdly nested bodies.
+        return _error_response("bad_request", "The request body is too deeply nested", 400)
+
     @app.errorhandler(Exception)
     def handle_unexpected(_exc: Exception) -> tuple[Response, int]:
         logger.exception("unhandled_exception")

@@ -64,7 +64,9 @@ def _build_analytics_repository(settings: ApiSettings) -> AnalyticsRepository:
     """BigQuery when a project is configured; otherwise empty results (local development only)."""
     if settings.gcp_project_id:
         return BigQueryAnalyticsRepository(
-            GoogleBigQueryGateway.from_project(settings.gcp_project_id),
+            GoogleBigQueryGateway.from_project(
+                settings.gcp_project_id, maximum_bytes_billed=settings.bq_max_bytes_billed
+            ),
             project_id=settings.gcp_project_id,
             dataset=settings.bq_dataset,
             alerts_table=settings.bq_alerts_table,

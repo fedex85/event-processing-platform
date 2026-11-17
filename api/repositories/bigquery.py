@@ -7,20 +7,16 @@ Table and view names come from settings and are validated at start-up.
 
 import json
 import logging
-import re
 from collections.abc import Callable, Mapping
 from datetime import datetime
 from typing import Any
 
 from api.errors.exceptions import AnalyticsQueryError, AnalyticsUnavailableError
 from api.repositories.base import AlertFilter, AlertRecord, TrendFilter, TrendRecord
-from common.bigquery import BigQueryGateway, QueryParam, is_transient_exception
+from common.bigquery import BigQueryGateway, QueryParam, is_transient_exception, qualified_name
 from common.retry import RetryPolicy, call_with_retry
 
 logger = logging.getLogger(__name__)
-
-_PROJECT_ID_RE = re.compile(r"^[a-z][a-z0-9\-:.]{4,61}[a-z0-9]$")
-_IDENTIFIER_RE = re.compile(r"^[A-Za-z_][A-Za-z0-9_]{0,1023}$")
 
 
 class BigQueryAnalyticsRepository:
@@ -36,14 +32,9 @@ class BigQueryAnalyticsRepository:
         timeout_seconds: float,
         sleep: Callable[[float], None] | None = None,
     ) -> None:
-        if not _PROJECT_ID_RE.fullmatch(project_id):
-            raise ValueError(f"invalid BigQuery project id: {project_id!r}")
-        for name in (dataset, alerts_table, trends_view):
-            if not _IDENTIFIER_RE.fullmatch(name):
-                raise ValueError(f"invalid BigQuery identifier: {name!r}")
         self._gateway = gateway
-        self._alerts_table = f"{project_id}.{dataset}.{alerts_table}"
-        self._trends_view = f"{project_id}.{dataset}.{trends_view}"
+        self._alerts_table = qualified_name(project_id, dataset, alerts_table)
+        self._trends_view = qualified_name(project_id, dataset, trends_view)
         self._retry_policy = retry_policy
         self._timeout_seconds = timeout_seconds
         self._sleep = sleep

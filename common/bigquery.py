@@ -5,12 +5,31 @@ Only this module touches ``google.cloud.bigquery``. Everything else talks to the
 no Google Cloud libraries or credentials.
 """
 
+import re
 from collections.abc import Mapping, Sequence
 from typing import Any, Protocol
 
 # (BigQuery type name, value), e.g. ("STRING", "store_014").
 QueryParam = tuple[str, Any]
 RowErrors = Sequence[Mapping[str, Any]]
+
+_PROJECT_ID_RE = re.compile(r"^[a-z][a-z0-9\-:.]{4,61}[a-z0-9]$")
+_IDENTIFIER_RE = re.compile(r"^[A-Za-z_][A-Za-z0-9_]{0,1023}$")
+
+
+def qualified_name(project_id: str, dataset: str, name: str) -> str:
+    """``project.dataset.name`` for use inside backticks in SQL.
+
+    These names end up in the text of the SQL (BigQuery cannot parameterize identifiers),
+    so anything unusual fails fast at start-up instead of reaching a query.
+    """
+    if not _PROJECT_ID_RE.fullmatch(project_id):
+        raise ValueError(f"invalid BigQuery project id: {project_id!r}")
+    for identifier in (dataset, name):
+        if not _IDENTIFIER_RE.fullmatch(identifier):
+            raise ValueError(f"invalid BigQuery identifier: {identifier!r}")
+    return f"{project_id}.{dataset}.{name}"
+
 
 # HTTP statuses that Google documents as worth retrying.
 TRANSIENT_HTTP_CODES = frozenset({408, 429, 500, 502, 503, 504})
@@ -44,17 +63,24 @@ def is_transient_exception(exc: BaseException) -> bool:
 
 
 class GoogleBigQueryGateway:
-    """The only place that touches ``google.cloud.bigquery``."""
+    """The only place that touches ``google.cloud.bigquery``.
 
-    def __init__(self, client: Any) -> None:
+    ``maximum_bytes_billed`` makes BigQuery refuse any query that would scan more than that,
+    so one expensive request cannot run up the bill. ``None`` means no cap.
+    """
+
+    def __init__(self, client: Any, *, maximum_bytes_billed: int | None = None) -> None:
         self._client = client
+        self._maximum_bytes_billed = maximum_bytes_billed
 
     @classmethod
-    def from_project(cls, project_id: str) -> "GoogleBigQueryGateway":
+    def from_project(
+        cls, project_id: str, *, maximum_bytes_billed: int | None = None
+    ) -> "GoogleBigQueryGateway":
         # Imported here so tests and tooling work without Google Cloud libraries or credentials.
         from google.cloud import bigquery
 
-        return cls(bigquery.Client(project=project_id))
+        return cls(bigquery.Client(project=project_id), maximum_bytes_billed=maximum_bytes_billed)
 
     def query_rows(
         self, sql: str, parameters: Mapping[str, QueryParam], *, timeout_seconds: float
@@ -65,7 +91,8 @@ class GoogleBigQueryGateway:
             query_parameters=[
                 bigquery.ScalarQueryParameter(name, type_name, value)
                 for name, (type_name, value) in parameters.items()
-            ]
+            ],
+            maximum_bytes_billed=self._maximum_bytes_billed,
         )
         job = self._client.query(sql, job_config=job_config, timeout=timeout_seconds)
         return [dict(row.items()) for row in job.result(timeout=timeout_seconds)]

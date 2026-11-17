@@ -75,3 +75,21 @@ def test_insert_rows_passes_row_ids_and_returns_the_row_errors() -> None:
         "timeout": 3.0,
     }
     assert errors == [{"index": 0, "errors": [{"reason": "invalid"}]}]
+
+
+def test_queries_carry_the_bytes_billed_cap() -> None:
+    client = FakeClient()
+
+    GoogleBigQueryGateway(client, maximum_bytes_billed=123_000_000).query_rows(
+        "SELECT 1", {}, timeout_seconds=1.0
+    )
+
+    assert client.query_call["job_config"].maximum_bytes_billed == 123_000_000
+
+
+def test_without_a_cap_the_job_config_has_none() -> None:
+    client = FakeClient()
+
+    GoogleBigQueryGateway(client).query_rows("SELECT 1", {}, timeout_seconds=1.0)
+
+    assert client.query_call["job_config"].maximum_bytes_billed is None

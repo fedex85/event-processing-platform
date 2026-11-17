@@ -13,10 +13,10 @@ def test_without_a_project_everything_stays_in_memory() -> None:
 
 
 def test_with_a_project_bigquery_is_used(monkeypatch: pytest.MonkeyPatch) -> None:
-    created: list[str] = []
+    created: list[tuple[str, int | None]] = []
 
-    def fake_from_project(project_id: str) -> FakeGateway:
-        created.append(project_id)
+    def fake_from_project(project_id: str, *, maximum_bytes_billed: int | None) -> FakeGateway:
+        created.append((project_id, maximum_bytes_billed))
         return FakeGateway()
 
     monkeypatch.setattr(GoogleBigQueryGateway, "from_project", staticmethod(fake_from_project))
@@ -26,7 +26,7 @@ def test_with_a_project_bigquery_is_used(monkeypatch: pytest.MonkeyPatch) -> Non
     )
 
     assert isinstance(repository, BigQueryRepository)
-    assert created == ["my-project"]
+    assert created == [("my-project", 1_000_000_000)]
 
 
 def test_build_dependencies_uses_the_given_repositories() -> None:
