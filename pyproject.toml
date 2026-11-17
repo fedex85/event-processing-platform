@@ -7,6 +7,7 @@ name = "inventory-event-platform"
 version = "0.1.0"
 description = "Real-time inventory event platform: Flask, Pub/Sub, Cloud Run and BigQuery."
 readme = "README.md"
+license = {text = "MIT"}
 requires-python = ">=3.12"
 dependencies = [
     "flask>=3.1,<4",
@@ -14,6 +15,9 @@ dependencies = [
     "pydantic>=2.9,<3",
     "pydantic-settings>=2.6,<3",
 ]
+
+[project.urls]
+Repository = "https://github.com/fedex85/event-processing-platform"
 
 [project.optional-dependencies]
 api = [
