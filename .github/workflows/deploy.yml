@@ -82,7 +82,7 @@ jobs:
       # The processor goes first so it can read anything the new API starts publishing.
       - name: Deploy inventory-processor
         if: steps.cfg.outputs.configured == 'true'
-        uses: google-github-actions/deploy-cloudrun@v2
+        uses: google-github-actions/deploy-cloudrun@v3
         with:
           service: inventory-processor
           region: ${{ vars.GCP_REGION }}
@@ -92,7 +92,7 @@ jobs:
       - name: Deploy inventory-api
         if: steps.cfg.outputs.configured == 'true'
         id: deploy_api
-        uses: google-github-actions/deploy-cloudrun@v2
+        uses: google-github-actions/deploy-cloudrun@v3
         with:
           service: inventory-api
           region: ${{ vars.GCP_REGION }}
