@@ -5,6 +5,8 @@ from typing import Any, Literal, Self
 from pydantic import Field, field_validator, model_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
+from common.retry import RetryPolicy
+
 Environment = Literal["local", "staging", "prod"]
 LogLevel = Literal["DEBUG", "INFO", "WARNING", "ERROR", "CRITICAL"]
 
@@ -45,3 +47,31 @@ class BaseServiceSettings(BaseSettings):
         if self.environment != "local" and not self.gcp_project_id:
             raise ValueError("GCP_PROJECT_ID is required when ENVIRONMENT is not 'local'")
         return self
+
+
+class BigQuerySettings(BaseServiceSettings):
+    """Settings of a service that talks to BigQuery: names, timeout and retry policy.
+
+    Each service redeclares the numeric fields with defaults that suit it; the rules that
+    relate them live here once.
+    """
+
+    bq_dataset: str = "inventory_analytics"
+    bq_timeout_seconds: float = Field(default=5.0, gt=0)
+    bq_retry_attempts: int = Field(default=3, ge=1, le=10)
+    bq_retry_base_delay_seconds: float = Field(default=0.2, ge=0)
+    bq_retry_max_delay_seconds: float = Field(default=2.0, ge=0)
+
+    @model_validator(mode="after")
+    def _retry_delays_are_ordered(self) -> Self:
+        if self.bq_retry_max_delay_seconds < self.bq_retry_base_delay_seconds:
+            raise ValueError("BQ_RETRY_MAX_DELAY_SECONDS must be >= BQ_RETRY_BASE_DELAY_SECONDS")
+        return self
+
+    @property
+    def retry_policy(self) -> RetryPolicy:
+        return RetryPolicy(
+            attempts=self.bq_retry_attempts,
+            base_delay_seconds=self.bq_retry_base_delay_seconds,
+            max_delay_seconds=self.bq_retry_max_delay_seconds,
+        )

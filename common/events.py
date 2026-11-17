@@ -65,6 +65,11 @@ class EventType(StrEnum):
     RESTOCK = "RESTOCK"
 
 
+def format_timestamp(value: datetime) -> str:
+    """ISO 8601 in UTC with a ``Z`` suffix, the format used everywhere in the contract."""
+    return value.isoformat().replace("+00:00", "Z")
+
+
 def new_event_id() -> str:
     return str(uuid4())
 

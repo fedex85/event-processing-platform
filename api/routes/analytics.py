@@ -9,8 +9,8 @@ from api.dependencies import get_dependencies
 from api.middleware.guard import authenticate_and_rate_limit
 from api.query_params import parse_alert_query, parse_trend_query
 from api.repositories.base import AlertRecord, TrendRecord
-from api.repositories.bigquery import format_timestamp
 from api.services.analytics import Window
+from common.events import format_timestamp
 
 logger = logging.getLogger(__name__)
 

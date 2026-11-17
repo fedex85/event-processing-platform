@@ -4,7 +4,7 @@ import pytest
 
 from api.errors.exceptions import AnalyticsQueryError, AnalyticsUnavailableError
 from api.repositories.base import AlertFilter, TrendFilter
-from api.repositories.bigquery import BigQueryAnalyticsRepository, format_timestamp
+from api.repositories.bigquery import BigQueryAnalyticsRepository
 from common.alerts import AlertStatus, AlertType, Severity
 from common.retry import RetryPolicy
 from common.tests.fakes import FakeGateway, HttpError
@@ -305,9 +305,3 @@ def test_rejects_identifiers_that_could_break_the_sql(overrides: dict[str, str])
             retry_policy=RetryPolicy(),
             timeout_seconds=1.0,
         )
-
-
-def test_timestamps_are_formatted_as_utc_with_z() -> None:
-    assert (
-        format_timestamp(datetime(2026, 11, 16, 19, 40, 13, tzinfo=UTC)) == "2026-11-16T19:40:13Z"
-    )

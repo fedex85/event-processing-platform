@@ -4,7 +4,7 @@ import pytest
 from pydantic import ValidationError
 
 from api.tests.factories import make_event_payload
-from common.events import IngestedStockEvent, StockEvent, to_error_items
+from common.events import IngestedStockEvent, StockEvent, format_timestamp, to_error_items
 
 
 def ingested_payload(**overrides: object) -> dict[str, object]:
@@ -79,3 +79,9 @@ def test_metadata_may_not_hold_non_finite_numbers() -> None:
 def test_metadata_size_counts_bytes_not_characters() -> None:
     with pytest.raises(ValidationError):
         StockEvent.model_validate(_event(metadata={"b": "ñ" * 2500}))
+
+
+def test_timestamps_are_formatted_as_utc_with_z() -> None:
+    assert (
+        format_timestamp(datetime(2026, 11, 16, 19, 40, 13, tzinfo=UTC)) == "2026-11-16T19:40:13Z"
+    )

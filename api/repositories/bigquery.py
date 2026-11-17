@@ -8,7 +8,6 @@ Table and view names come from settings and are validated at start-up.
 import json
 import logging
 from collections.abc import Callable, Mapping
-from datetime import datetime
 from typing import Any
 
 from api.errors.exceptions import AnalyticsQueryError, AnalyticsUnavailableError
@@ -165,8 +164,3 @@ def _parse_json_object(value: Any) -> dict[str, Any]:
             return {}
         return decoded if isinstance(decoded, dict) else {}
     return {}
-
-
-def format_timestamp(value: datetime) -> str:
-    """ISO 8601 in UTC with a ``Z`` suffix, the format used everywhere in the contract."""
-    return value.isoformat().replace("+00:00", "Z")

@@ -4,14 +4,13 @@ from typing import Any, Self
 
 from pydantic import Field, SecretStr, field_validator, model_validator
 
-from common.retry import RetryPolicy
-from common.settings import BaseServiceSettings
+from common.settings import BigQuerySettings
 
 # Generate keys with e.g. `python -c "import secrets; print(secrets.token_urlsafe(32))"`.
 MIN_API_KEY_LENGTH = 24
 
 
-class ApiSettings(BaseServiceSettings):
+class ApiSettings(BigQuerySettings):
     service_name: str = "inventory-api"
 
     # Authentication. Comma-separated list; deployed environments read it from Secret Manager.
@@ -29,7 +28,6 @@ class ApiSettings(BaseServiceSettings):
 
     # Reads. With GCP_PROJECT_ID set the read endpoints query BigQuery; without it (local
     # development only) they return empty lists.
-    bq_dataset: str = "inventory_analytics"
     bq_alerts_table: str = "stock_alerts"
     bq_trends_view: str = "v_stock_trends"
     bq_timeout_seconds: float = Field(default=8.0, gt=0)
@@ -71,17 +69,3 @@ class ApiSettings(BaseServiceSettings):
         if self.environment != "local" and not self.pubsub_topic_id:
             raise ValueError("PUBSUB_TOPIC_ID is required when ENVIRONMENT is not 'local'")
         return self
-
-    @model_validator(mode="after")
-    def _retry_delays_are_ordered(self) -> Self:
-        if self.bq_retry_max_delay_seconds < self.bq_retry_base_delay_seconds:
-            raise ValueError("BQ_RETRY_MAX_DELAY_SECONDS must be >= BQ_RETRY_BASE_DELAY_SECONDS")
-        return self
-
-    @property
-    def retry_policy(self) -> RetryPolicy:
-        return RetryPolicy(
-            attempts=self.bq_retry_attempts,
-            base_delay_seconds=self.bq_retry_base_delay_seconds,
-            max_delay_seconds=self.bq_retry_max_delay_seconds,
-        )
