@@ -39,6 +39,15 @@ def test_responses_are_not_cacheable_and_not_sniffed(client: FlaskClient) -> Non
     assert response.headers["X-Content-Type-Options"] == "nosniff"
 
 
+def test_responses_cannot_be_rendered_framed_or_leak_a_referrer(client: FlaskClient) -> None:
+    response = client.post("/echo", json={})
+
+    assert response.headers["Content-Security-Policy"] == (
+        "default-src 'none'; frame-ancestors 'none'"
+    )
+    assert response.headers["Referrer-Policy"] == "no-referrer"
+
+
 def test_absurdly_nested_json_is_a_400_not_a_500(client: FlaskClient) -> None:
     body = "[" * 100_000 + "]" * 100_000
     small = Flask(__name__)

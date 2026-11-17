@@ -16,4 +16,9 @@ def apply_hardening(app: Flask, *, max_request_bytes: int) -> None:
         # Responses carry business data: never let a proxy or browser cache them.
         response.headers.setdefault("Cache-Control", "no-store")
         response.headers.setdefault("X-Content-Type-Options", "nosniff")
+        # These services only return JSON: nothing should be rendered, framed or leak a referrer.
+        response.headers.setdefault(
+            "Content-Security-Policy", "default-src 'none'; frame-ancestors 'none'"
+        )
+        response.headers.setdefault("Referrer-Policy", "no-referrer")
         return response
