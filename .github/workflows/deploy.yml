@@ -42,20 +42,37 @@ jobs:
         with:
           ref: ${{ github.event.workflow_run.head_sha || inputs.ref }}
 
+      - name: Check deployment is configured
+        id: cfg
+        env:
+          PROVIDER: ${{ vars.GCP_WORKLOAD_IDENTITY_PROVIDER }}
+        run: |
+          if [ -z "$PROVIDER" ]; then
+            echo "configured=false" >> "$GITHUB_OUTPUT"
+            echo "::notice::GCP variables are not set for this environment; skipping deploy. See docs/runbook.md#deploy."
+          else
+            echo "configured=true" >> "$GITHUB_OUTPUT"
+          fi
+
       - name: Resolve image tag
+        if: steps.cfg.outputs.configured == 'true'
         run: echo "TAG=$(git rev-parse --short=12 HEAD)" >> "$GITHUB_ENV"
 
       - uses: google-github-actions/auth@v2
+        if: steps.cfg.outputs.configured == 'true'
         with:
           workload_identity_provider: ${{ vars.GCP_WORKLOAD_IDENTITY_PROVIDER }}
           service_account: ${{ vars.GCP_DEPLOYER_SERVICE_ACCOUNT }}
 
       - uses: google-github-actions/setup-gcloud@v2
+        if: steps.cfg.outputs.configured == 'true'
 
       - name: Let Docker push to Artifact Registry
+        if: steps.cfg.outputs.configured == 'true'
         run: gcloud auth configure-docker "${{ vars.GCP_REGION }}-docker.pkg.dev" --quiet
 
       - name: Build and push images
+        if: steps.cfg.outputs.configured == 'true'
         run: |
           for service in api processor; do
             docker build -f "docker/${service}.Dockerfile" -t "${REGISTRY}/inventory-${service}:${TAG}" .
@@ -64,6 +81,7 @@ jobs:
 
       # The processor goes first so it can read anything the new API starts publishing.
       - name: Deploy inventory-processor
+        if: steps.cfg.outputs.configured == 'true'
         uses: google-github-actions/deploy-cloudrun@v2
         with:
           service: inventory-processor
@@ -72,6 +90,7 @@ jobs:
           image: ${{ env.REGISTRY }}/inventory-processor:${{ env.TAG }}
 
       - name: Deploy inventory-api
+        if: steps.cfg.outputs.configured == 'true'
         id: deploy_api
         uses: google-github-actions/deploy-cloudrun@v2
         with:
@@ -81,4 +100,5 @@ jobs:
           image: ${{ env.REGISTRY }}/inventory-api:${{ env.TAG }}
 
       - name: Smoke test
+        if: steps.cfg.outputs.configured == 'true'
         run: curl --fail --silent --show-error --retry 5 --retry-delay 5 "${{ steps.deploy_api.outputs.url }}/v1/health"
