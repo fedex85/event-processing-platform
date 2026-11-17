@@ -15,6 +15,7 @@ concurrency:
 jobs:
   quality:
     runs-on: ubuntu-latest
+    timeout-minutes: 15
     steps:
       - uses: actions/checkout@v4
 
@@ -39,6 +40,7 @@ jobs:
 
   terraform:
     runs-on: ubuntu-latest
+    timeout-minutes: 10
     defaults:
       run:
         working-directory: infra
@@ -60,6 +62,7 @@ jobs:
 
   images:
     runs-on: ubuntu-latest
+    timeout-minutes: 20
     strategy:
       matrix:
         service: [api, processor]
@@ -77,3 +80,22 @@ jobs:
           push: false
           cache-from: type=gha,scope=${{ matrix.service }}
           cache-to: type=gha,mode=max,scope=${{ matrix.service }}
+
+  # Informational: a new advisory in a transitive dependency should be visible without
+  # blocking unrelated changes. Dependabot opens the fix pull request.
+  audit:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    continue-on-error: true
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+          cache: pip
+
+      - name: Audit runtime dependencies
+        run: |
+          python -m pip install -e ".[api,processor]" pip-audit
+          pip-audit --skip-editable
