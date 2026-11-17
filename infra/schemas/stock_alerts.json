@@ -1,0 +1,11 @@
+[
+  {"name": "alert_id", "type": "STRING", "mode": "REQUIRED", "description": "Deterministic id derived from event_id and alert_type."},
+  {"name": "event_id", "type": "STRING", "mode": "REQUIRED", "description": "Event that triggered the alert."},
+  {"name": "store_id", "type": "STRING", "mode": "REQUIRED", "description": "Store of the triggering event."},
+  {"name": "sku", "type": "STRING", "mode": "REQUIRED", "description": "Product of the triggering event."},
+  {"name": "alert_type", "type": "STRING", "mode": "REQUIRED", "description": "LOW_STOCK, OUT_OF_STOCK or RAPID_STOCK_DROP."},
+  {"name": "severity", "type": "STRING", "mode": "REQUIRED", "description": "LOW, MEDIUM, HIGH or CRITICAL."},
+  {"name": "detected_at", "type": "TIMESTAMP", "mode": "REQUIRED", "description": "When the processor raised the alert."},
+  {"name": "details", "type": "JSON", "mode": "NULLABLE", "description": "Rule-specific evidence (thresholds, baseline, ratio)."},
+  {"name": "status", "type": "STRING", "mode": "REQUIRED", "description": "OPEN."}
+]

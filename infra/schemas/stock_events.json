@@ -1,0 +1,14 @@
+[
+  {"name": "event_id", "type": "STRING", "mode": "REQUIRED", "description": "Unique event id; the idempotency key."},
+  {"name": "store_id", "type": "STRING", "mode": "REQUIRED", "description": "Store that reported the event."},
+  {"name": "sku", "type": "STRING", "mode": "REQUIRED", "description": "Product identifier."},
+  {"name": "event_type", "type": "STRING", "mode": "REQUIRED", "description": "STOCK_UPDATED, SALE or RESTOCK."},
+  {"name": "quantity", "type": "INT64", "mode": "REQUIRED", "description": "STOCK_UPDATED: resulting stock. SALE: units sold. RESTOCK: units added."},
+  {"name": "previous_quantity", "type": "INT64", "mode": "NULLABLE", "description": "Stock before the change, when the source reports it."},
+  {"name": "unit", "type": "STRING", "mode": "REQUIRED", "description": "Unit of measure."},
+  {"name": "occurred_at", "type": "TIMESTAMP", "mode": "REQUIRED", "description": "When the change happened in the store. Partition column."},
+  {"name": "ingested_at", "type": "TIMESTAMP", "mode": "REQUIRED", "description": "When inventory-api accepted the event."},
+  {"name": "source", "type": "STRING", "mode": "REQUIRED", "description": "System that produced the event."},
+  {"name": "metadata", "type": "JSON", "mode": "NULLABLE", "description": "Free-form attributes sent by the client."},
+  {"name": "processing_status", "type": "STRING", "mode": "REQUIRED", "description": "PROCESSED once the processor stored the event."}
+]
