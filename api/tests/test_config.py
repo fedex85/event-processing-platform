@@ -120,3 +120,49 @@ def test_publish_timeout_must_be_positive() -> None:
 def test_port_must_be_valid(value: int) -> None:
     with pytest.raises(ValidationError):
         load(port=value)
+
+
+# --- Phase 4: read endpoints ---
+
+
+def test_read_defaults() -> None:
+    settings = ApiSettings(environment="local", api_keys="k")
+
+    assert (settings.bq_dataset, settings.bq_alerts_table, settings.bq_trends_view) == (
+        "inventory_analytics",
+        "stock_alerts",
+        "v_stock_trends",
+    )
+    assert settings.alerts_default_lookback_days == 7
+    assert settings.trends_default_lookback_hours == 24
+    assert settings.trends_max_range_days == 31
+    policy = settings.retry_policy
+    assert (policy.attempts, policy.base_delay_seconds, policy.max_delay_seconds) == (2, 0.1, 0.5)
+
+
+def test_read_settings_come_from_the_environment(monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.setenv("BQ_DATASET", "other")
+    monkeypatch.setenv("ALERTS_DEFAULT_LOOKBACK_DAYS", "3")
+    monkeypatch.setenv("TRENDS_MAX_RANGE_DAYS", "10")
+
+    settings = ApiSettings(environment="local", api_keys="k")
+
+    assert settings.bq_dataset == "other"
+    assert settings.alerts_default_lookback_days == 3
+    assert settings.trends_max_range_days == 10
+
+
+@pytest.mark.parametrize(
+    "overrides",
+    [
+        {"alerts_default_lookback_days": 0},
+        {"trends_default_lookback_hours": 0},
+        {"trends_max_range_days": 0},
+        {"bq_timeout_seconds": 0},
+        {"bq_retry_attempts": 0},
+        {"bq_retry_base_delay_seconds": 2.0, "bq_retry_max_delay_seconds": 1.0},
+    ],
+)
+def test_invalid_read_settings_are_rejected(overrides: dict[str, float]) -> None:
+    with pytest.raises(ValidationError):
+        ApiSettings.model_validate({"environment": "local", "api_keys": "k", **overrides})

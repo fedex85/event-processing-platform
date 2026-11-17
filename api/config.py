@@ -4,6 +4,7 @@ from typing import Any, Self
 
 from pydantic import Field, SecretStr, field_validator, model_validator
 
+from common.retry import RetryPolicy
 from common.settings import BaseServiceSettings
 
 
@@ -22,6 +23,19 @@ class ApiSettings(BaseServiceSettings):
     rate_limit_per_minute: int = Field(default=600, ge=1)
     idempotency_ttl_seconds: int = Field(default=900, ge=1)
     idempotency_max_entries: int = Field(default=100_000, ge=1)
+
+    # Reads. With GCP_PROJECT_ID set the read endpoints query BigQuery; without it (local
+    # development only) they return empty lists.
+    bq_dataset: str = "inventory_analytics"
+    bq_alerts_table: str = "stock_alerts"
+    bq_trends_view: str = "v_stock_trends"
+    bq_timeout_seconds: float = Field(default=8.0, gt=0)
+    bq_retry_attempts: int = Field(default=2, ge=1, le=5)
+    bq_retry_base_delay_seconds: float = Field(default=0.1, ge=0)
+    bq_retry_max_delay_seconds: float = Field(default=0.5, ge=0)
+    alerts_default_lookback_days: int = Field(default=7, ge=1, le=365)
+    trends_default_lookback_hours: int = Field(default=24, ge=1, le=720)
+    trends_max_range_days: int = Field(default=31, ge=1, le=366)
 
     @field_validator("pubsub_topic_id", mode="before")
     @classmethod
@@ -46,3 +60,17 @@ class ApiSettings(BaseServiceSettings):
         if self.environment != "local" and not self.pubsub_topic_id:
             raise ValueError("PUBSUB_TOPIC_ID is required when ENVIRONMENT is not 'local'")
         return self
+
+    @model_validator(mode="after")
+    def _retry_delays_are_ordered(self) -> Self:
+        if self.bq_retry_max_delay_seconds < self.bq_retry_base_delay_seconds:
+            raise ValueError("BQ_RETRY_MAX_DELAY_SECONDS must be >= BQ_RETRY_BASE_DELAY_SECONDS")
+        return self
+
+    @property
+    def retry_policy(self) -> RetryPolicy:
+        return RetryPolicy(
+            attempts=self.bq_retry_attempts,
+            base_delay_seconds=self.bq_retry_base_delay_seconds,
+            max_delay_seconds=self.bq_retry_max_delay_seconds,
+        )

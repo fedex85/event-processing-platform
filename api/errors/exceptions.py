@@ -32,3 +32,22 @@ class PublishFailedError(AppError):
 
     def __init__(self) -> None:
         super().__init__("The event could not be published; retry later")
+
+
+class AnalyticsUnavailableError(AppError):
+    status_code = 503
+    code = "analytics_unavailable"
+
+    def __init__(self) -> None:
+        super().__init__(
+            "The analytics store is temporarily unavailable; retry later",
+            headers={"Retry-After": "5"},
+        )
+
+
+class AnalyticsQueryError(AppError):
+    status_code = 500
+    code = "analytics_error"
+
+    def __init__(self) -> None:
+        super().__init__("The analytics query failed")

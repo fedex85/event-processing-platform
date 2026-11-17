@@ -6,8 +6,8 @@ from typing import Any
 from flask import Blueprint, Response, g, jsonify, request
 
 from api.dependencies import get_dependencies
-from api.errors.exceptions import PublishFailedError, RateLimitedError
-from api.middleware.auth import API_KEY_HEADER
+from api.errors.exceptions import PublishFailedError
+from api.middleware.guard import authenticate_and_rate_limit
 from api.schemas import (
     AcceptedResponse,
     BatchResponse,
@@ -25,17 +25,7 @@ logger = logging.getLogger(__name__)
 events_blueprint = Blueprint("events", __name__, url_prefix="/v1")
 
 
-@events_blueprint.before_request
-def authenticate_and_rate_limit() -> None:
-    dependencies = get_dependencies()
-    client_id = dependencies.authenticator.authenticate(request.headers.get(API_KEY_HEADER))
-    g.client_id = client_id
-    bind_context(client_id=client_id)
-
-    retry_after = dependencies.rate_limiter.acquire(client_id)
-    if retry_after > 0:
-        logger.warning("rate_limited", extra={"retry_after_seconds": round(retry_after, 2)})
-        raise RateLimitedError(retry_after)
+events_blueprint.before_request(authenticate_and_rate_limit)
 
 
 @events_blueprint.post("/events")

@@ -5,6 +5,12 @@ from collections.abc import Sequence
 from typing import Any
 
 from api.publishers.base import OutgoingMessage, PublishError
+from api.repositories.base import (
+    AlertFilter,
+    AlertRecord,
+    TrendFilter,
+    TrendRecord,
+)
 
 
 class FakePublisher:
@@ -47,3 +53,26 @@ class FakeClock:
 
     def advance(self, seconds: float) -> None:
         self.now += seconds
+
+
+class FakeAnalyticsRepository:
+    """Serves canned rows (honouring limit and offset) and records the filters it receives."""
+
+    def __init__(self) -> None:
+        self.alerts: list[AlertRecord] = []
+        self.trends: list[TrendRecord] = []
+        self.alert_filters: list[AlertFilter] = []
+        self.trend_filters: list[TrendFilter] = []
+        self.error: Exception | None = None
+
+    def find_alerts(self, criteria: AlertFilter) -> list[AlertRecord]:
+        self.alert_filters.append(criteria)
+        if self.error:
+            raise self.error
+        return self.alerts[criteria.offset : criteria.offset + criteria.limit]
+
+    def find_trends(self, criteria: TrendFilter) -> list[TrendRecord]:
+        self.trend_filters.append(criteria)
+        if self.error:
+            raise self.error
+        return self.trends[criteria.offset : criteria.offset + criteria.limit]
