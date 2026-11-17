@@ -91,9 +91,11 @@ class GoogleBigQueryGateway:
             query_parameters=[
                 bigquery.ScalarQueryParameter(name, type_name, value)
                 for name, (type_name, value) in parameters.items()
-            ],
-            maximum_bytes_billed=self._maximum_bytes_billed,
+            ]
         )
+        # Only set when capped: the client library stores an explicit None as the text "None".
+        if self._maximum_bytes_billed is not None:
+            job_config.maximum_bytes_billed = self._maximum_bytes_billed
         job = self._client.query(sql, job_config=job_config, timeout=timeout_seconds)
         return [dict(row.items()) for row in job.result(timeout=timeout_seconds)]
 
