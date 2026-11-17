@@ -122,9 +122,9 @@ Terraform (`infra/`) crea Cloud Run, Pub/Sub con cola de mensajes fallidos (DLQ)
 
 ```mermaid
 flowchart LR
-    PR["Pull request / push"] --> CI["CI<br/>ruff, mypy, pytest,<br/>terraform validate, docker build"]
-    CI -->|"main passes"| STG["Deploy staging<br/>automatic"]
-    STG --> PROD["Deploy production<br/>manual approval"]
+    pr["Pull request or push"] --> ci["CI: ruff, mypy, pytest, terraform validate, docker build"]
+    ci -->|"main passes"| staging["Deploy to staging (automatic)"]
+    staging --> production["Deploy to production (manual approval)"]
 ```
 
 El procedimiento paso a paso (bucket de estado, secreto, primer apply, variables de GitHub, rollback, reproceso de la DLQ) está en [`docs/runbook.md`](docs/runbook.md#deploy).

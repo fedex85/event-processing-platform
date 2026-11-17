@@ -122,9 +122,9 @@ Terraform (`infra/`) creates Cloud Run, Pub/Sub with a dead-letter queue, BigQue
 
 ```mermaid
 flowchart LR
-    PR["Pull request / push"] --> CI["CI<br/>ruff, mypy, pytest,<br/>terraform validate, docker build"]
-    CI -->|"main passes"| STG["Deploy staging<br/>automatic"]
-    STG --> PROD["Deploy production<br/>manual approval"]
+    pr["Pull request or push"] --> ci["CI: ruff, mypy, pytest, terraform validate, docker build"]
+    ci -->|"main passes"| staging["Deploy to staging (automatic)"]
+    staging --> production["Deploy to production (manual approval)"]
 ```
 
 The step-by-step procedure (state bucket, secret, first apply, GitHub variables, rollback, dead-letter replay) is in [`docs/runbook.md`](docs/runbook.md#deploy).
