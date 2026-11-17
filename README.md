@@ -2,7 +2,7 @@
 
 An event-driven platform that ingests stock changes from stores, processes them asynchronously and turns them into alerts and trends. It is a portfolio project built to show production-minded backend work: API design, asynchronous processing, spike absorption, idempotency, observability and cloud-native deployment on Google Cloud.
 
-> **Status: Phase 3 of 5 (processing).** The API ingests and publishes events; the processor consumes them from Pub/Sub, deduplicates them by `event_id`, applies the alert rules and writes events and alerts to BigQuery. Analytics queries and infrastructure land in the next phases.
+> **Status: Phase 4 of 5 (analytics).** The API ingests and publishes events and serves alerts and hourly stock trends; the processor consumes events from Pub/Sub, deduplicates them by `event_id`, applies the alert rules and writes events and alerts to BigQuery. Infrastructure (Terraform, CI/CD) lands in the next phase.
 
 ## Architecture
 
@@ -86,6 +86,10 @@ docker run --rm -p 8080:8080 inventory-api:local
 
 Requests carry an `X-API-Key` header. Details, status codes and examples are in [`docs/api.md`](docs/api.md).
 
+## Security
+
+Authentication, input limits, parameterized SQL, query cost caps and the known gaps are listed in [`docs/security.md`](docs/security.md).
+
 ## Configuration
 
 Settings come from environment variables (see [`.env.example`](.env.example)). Nothing about a project, region, URL or credential is hardcoded. Outside `ENVIRONMENT=local` the services refuse to start without `GCP_PROJECT_ID` (and, for the API, `API_KEYS`).
@@ -125,7 +129,7 @@ Validation is strict: integers must be real integers, `occurred_at` must be an I
 - **Errors are always JSON.** Unexpected exceptions are logged with a stack trace but never returned to the client.
 - **Timestamps without a timezone are rejected** rather than guessed, because a wrong guess silently corrupts hourly aggregations.
 - **`202` means Pub/Sub has the event.** The API waits for the broker's confirmation, so a client can retry safely; it never reports success for an event that was not published.
-- **Per-instance idempotency and rate limiting** (no Redis): both are optimizations in front of Pub/Sub. The processor deduplicates by `event_id` in BigQuery, so they cannot cause data loss or duplicates downstream.
+- **Per-process idempotency and rate limiting** (no Redis): both are optimizations in front of Pub/Sub. The processor deduplicates by `event_id` in BigQuery, so they cannot cause data loss or duplicates downstream.
 - **The event row is the commit marker.** The processor writes alerts first and the event last, so a failure at any point is repaired by Pub/Sub's redelivery. Alerts have deterministic ids, so a retry never creates a second alert.
 - **Poison messages get `400`, storage trouble gets `503`.** Pub/Sub's dead-letter policy (Phase 5) moves a message aside after N failed deliveries; nothing is silently dropped.
 - **`insert_rows_json` instead of the Storage Write API**, with `insertId`, retries and a documented trade-off (see `processor/repositories/bigquery.py`). The adapter sits behind a port, so a Storage Write API adapter can replace it later.

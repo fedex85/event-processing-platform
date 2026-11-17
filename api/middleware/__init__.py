@@ -1,4 +1,4 @@
-"""Request middleware for the API. Authentication and rate limiting arrive in Phase 2."""
+"""Request middleware for the API: request context, authentication and rate limiting."""
 
 from flask import Flask
 

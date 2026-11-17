@@ -6,7 +6,7 @@ Base path: `/v1`. All responses are JSON. Every response carries an `X-Trace-Id`
 
 Every endpoint except `GET /v1/health` requires an API key in the `X-API-Key` header. A missing or wrong key returns `401` with `code: "unauthorized"`.
 
-Rate limiting is applied per API key. Over the limit, the API returns `429` with `code: "rate_limited"` and a `Retry-After` header (seconds). A batch counts as one request. The limit is per instance, so it is a safety net rather than an exact quota.
+Rate limiting is applied per API key. Over the limit, the API returns `429` with `code: "rate_limited"` and a `Retry-After` header (seconds). A batch counts as one request. The limit is per process (each gunicorn worker of each Cloud Run instance), so it is a safety net rather than an exact quota.
 
 ## `GET /v1/health`
 
@@ -56,7 +56,7 @@ Rejected:
 
 ### Retrying safely
 
-Send your own `event_id` so a retry after a timeout cannot create a second event. Without one, the API generates a new id on every request, so a retried request is a new event. The API remembers recent ids per instance only; the processor performs the final deduplication.
+Send your own `event_id` so a retry after a timeout cannot create a second event. Without one, the API generates a new id on every request, so a retried request is a new event. The API remembers recent ids per process only; the processor performs the final deduplication.
 
 ## `POST /v1/events:batch`
 

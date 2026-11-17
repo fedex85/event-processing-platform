@@ -102,6 +102,8 @@ Compare the bytes with a full scan of `stock_events`. If they are similar, pruni
 | `inventory-api` | `roles/bigquery.dataViewer` on the dataset, `roles/bigquery.jobUser` on the project, `roles/pubsub.publisher` on the topic |
 | `inventory-processor` | `roles/bigquery.dataEditor` on the dataset, `roles/bigquery.jobUser` on the project |
 
+A query that exceeds `BQ_MAX_BYTES_BILLED` fails with `500 analytics_error` (the log shows the BigQuery reason); narrow the window or raise the cap deliberately.
+
 A `503 analytics_unavailable` that never clears usually means a missing `jobUser` role or a wrong `BQ_DATASET`; check the logs for the BigQuery error reason.
 
 ## Planned

@@ -11,10 +11,7 @@ from common.errors import AppError
 
 @pytest.fixture
 def app_with_routes(app: Flask) -> Flask:
-    """The real app plus throwaway routes that exercise the error handlers.
-
-    The ingestion route itself arrives in Phase 2.
-    """
+    """The real app plus throwaway routes that exercise the error handlers."""
 
     @app.post("/test/echo")
     def echo() -> Response:

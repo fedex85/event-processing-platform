@@ -120,7 +120,7 @@ The adapter is behind `EventRepository` / `AlertRepository`, so a Storage Write 
 | Strict validation (no type coercion, timezone required, 255-character limit on text fields) | A silently coerced value corrupts analytics later; the limit also keeps values inside Pub/Sub attribute limits |
 | Batch: valid events are published even if others are invalid (`207`) | One bad event should not make a store lose the other 99 |
 | An id is remembered only after Pub/Sub confirms it | A failed publish can always be retried; the API never reports "duplicate" for something that was not published |
-| Idempotency and rate limiting held in memory, per instance | Without Redis there is no shared state. Both are optimizations: the processor deduplicates by `event_id` in BigQuery, and `max-instances` bounds the total request rate |
+| Idempotency and rate limiting held in memory, per process (worker) | Without Redis there is no shared state. Both are optimizations: the processor deduplicates by `event_id` in BigQuery, and `max-instances` bounds the total request rate |
 | Log-only publisher in local development | Lets the API and simulator run with no Google Cloud; refused outside `ENVIRONMENT=local` by configuration validation |
 | Publish and wait for confirmation before answering | `202` means "Pub/Sub has it", which is what makes the system safe to retry |
 
