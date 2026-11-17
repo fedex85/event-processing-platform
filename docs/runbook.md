@@ -1,6 +1,6 @@
 # Runbook
 
-Operational procedures are added as the system gains something to operate. Today only local development exists.
+Operational procedures are added as the system gains something to operate. Local development, querying alerts and trends, and the read-side IAM are covered; deployment arrives with Phase 5.
 
 ## Run locally
 
@@ -65,6 +65,44 @@ Every response includes `X-Trace-Id`. Find the matching log lines by `trace_id`.
 | Processor `503 storage_unavailable` | BigQuery transient failure after retries. Look for `storage_retry` and `bigquery_row_errors` in the logs; Pub/Sub redelivers by itself |
 | Processor `500 storage_error` | BigQuery rejected the write (schema drift, missing `roles/bigquery.dataEditor`, wrong dataset or table name). Compare the table with `infra/schemas/*.json` |
 | Alerts keep repeating for one SKU | By design in Phase 3: every `STOCK_UPDATED` at or below the threshold raises an alert. A cooldown is planned |
+
+## Query alerts and trends
+
+```powershell
+$h = @{ "X-API-Key" = "local-dev-key-change-me" }
+Invoke-RestMethod -Headers $h "http://127.0.0.1:8080/v1/alerts?severity=CRITICAL&limit=10"
+Invoke-RestMethod -Headers $h "http://127.0.0.1:8080/v1/metrics/stock-trends?store_id=store_014"
+```
+
+Without `GCP_PROJECT_ID` both return empty lists: the API does not share memory with the processor. Against a real project they read BigQuery.
+
+### Create or update the view
+
+`infra/sql/v_stock_trends.sql` contains `${project_id}` and `${dataset}` placeholders (Terraform fills them in Phase 5). To apply it by hand:
+
+```bash
+sed -e "s/\${project_id}/$PROJECT/g" -e "s/\${dataset}/inventory_analytics/g" \
+  infra/sql/v_stock_trends.sql | bq query --use_legacy_sql=false
+```
+
+### Check the view prunes partitions
+
+```bash
+bq query --use_legacy_sql=false --dry_run \
+  "SELECT * FROM \`$PROJECT.inventory_analytics.v_stock_trends\`
+   WHERE hour_start >= TIMESTAMP_SUB(CURRENT_TIMESTAMP(), INTERVAL 24 HOUR)"
+```
+
+Compare the bytes with a full scan of `stock_events`. If they are similar, pruning does not work through the view: replace it with a table function that takes the window as arguments.
+
+### IAM for the read side
+
+| Service account | Roles |
+|---|---|
+| `inventory-api` | `roles/bigquery.dataViewer` on the dataset, `roles/bigquery.jobUser` on the project, `roles/pubsub.publisher` on the topic |
+| `inventory-processor` | `roles/bigquery.dataEditor` on the dataset, `roles/bigquery.jobUser` on the project |
+
+A `503 analytics_unavailable` that never clears usually means a missing `jobUser` role or a wrong `BQ_DATASET`; check the logs for the BigQuery error reason.
 
 ## Planned
 

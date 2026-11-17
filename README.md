@@ -39,8 +39,8 @@ Each service keeps a light hexagonal layout: entry points (`routes`, `consumers`
 | 1 | Foundations: structure, config, logging, errors, health, validation, Docker | Done |
 | 2 | Ingestion: `POST /v1/events`, `:batch`, API keys, Pub/Sub publishing, idempotency, rate limiting, simulator | Done |
 | 3 | Processing: push endpoint, BigQuery writes, deduplication, retries, DLQ-ready errors, alert rules | Done (BigQuery adapter not yet run against a real project) |
-| 4 | Analytics: `GET /v1/alerts`, `GET /v1/metrics/stock-trends`, `v_stock_trends` view | Next |
-| 5 | Infrastructure: Terraform, CI/CD, runbook | |
+| 4 | Analytics: `GET /v1/alerts`, `GET /v1/metrics/stock-trends`, `v_stock_trends` view | Done (SQL not yet run against a real project) |
+| 5 | Infrastructure: Terraform, CI/CD, runbook | Next |
 
 ## Getting started
 
@@ -80,6 +80,8 @@ docker run --rm -p 8080:8080 inventory-api:local
 | `GET /v1/health` | Liveness check (no key needed) |
 | `POST /v1/events` | Ingest one event; `202` once Pub/Sub has confirmed it |
 | `POST /v1/events:batch` | Ingest up to 100 events; valid ones are published even if others are rejected (`207`) |
+| `GET /v1/alerts` | Alerts, newest first; filters by store, SKU, type, severity, status and time; paginated |
+| `GET /v1/metrics/stock-trends` | Hourly sold, restocked, average stock, events and variation per store and SKU |
 | `POST /internal/pubsub` | (processor) Pub/Sub push endpoint; not for clients, protected by Cloud Run IAM |
 
 Requests carry an `X-API-Key` header. Details, status codes and examples are in [`docs/api.md`](docs/api.md).

@@ -108,9 +108,94 @@ Unexpected server errors return `500` with `code: "internal_error"` and no detai
 
 `POST /internal/pubsub` belongs to `inventory-processor` and is called only by the Pub/Sub push subscription (Cloud Run IAM authenticates it). It takes the standard push envelope and answers `204` (processed or duplicate), `400` (message can never succeed), `503` (storage temporarily unavailable) or `500`. See [`architecture.md`](architecture.md#processing-flow-inventory-processor).
 
-## Planned
+## `GET /v1/alerts`
 
-| Endpoint | Phase |
+Lists alerts written by the processor, newest first.
+
+| Parameter | Meaning |
 |---|---|
-| `GET /v1/alerts` | 4 |
-| `GET /v1/metrics/stock-trends` | 4 |
+| `store_id`, `sku` | Exact match |
+| `alert_type` | `LOW_STOCK`, `OUT_OF_STOCK` or `RAPID_STOCK_DROP` |
+| `severity` | `LOW`, `MEDIUM`, `HIGH` or `CRITICAL` |
+| `status` | `OPEN` |
+| `from` | Start of the window, inclusive. Default: 7 days ago |
+| `to` | End of the window, exclusive. Default: no upper bound |
+| `limit` | 1 to 500. Default 50 |
+| `offset` | 0 to 100000. Default 0 |
+
+Timestamps are ISO 8601 and must carry a timezone (`2026-11-16T19:40:12Z`). In a URL, write `+` as `%2B`. Unknown or repeated parameters are rejected with `400`.
+
+```http
+GET /v1/alerts?store_id=store_014&severity=CRITICAL&limit=20
+X-API-Key: <key>
+```
+
+```json
+{
+  "items": [
+    {
+      "alert_id": "6f0c0d0e-...",
+      "event_id": "evt_01J5Z8K9Q2M7",
+      "store_id": "store_014",
+      "sku": "SKU-88231",
+      "alert_type": "OUT_OF_STOCK",
+      "severity": "CRITICAL",
+      "detected_at": "2026-11-16T19:40:13Z",
+      "details": { "quantity": 0 },
+      "status": "OPEN"
+    }
+  ],
+  "pagination": { "limit": 20, "offset": 0, "returned": 1, "has_more": false },
+  "window": { "from": "2026-11-10T12:30:00Z", "to": null }
+}
+```
+
+Pagination uses `has_more` instead of a total: counting would make BigQuery scan the whole window on every call. Page with `offset += limit` while `has_more` is true. New alerts arriving between pages can shift results; narrow the window with `from` and `to` for a stable view.
+
+## `GET /v1/metrics/stock-trends`
+
+Hourly aggregates per store and SKU from the `v_stock_trends` view, newest hour first.
+
+| Parameter | Meaning |
+|---|---|
+| `store_id`, `sku` | Exact match |
+| `from` | Start of the window. Floored to the hour so the bucket containing it is included. Default: 24 hours ago |
+| `to` | End of the window, exclusive. Default: no upper bound |
+| `limit` | 1 to 1000. Default 100 |
+| `offset` | 0 to 100000. Default 0 |
+
+The range from `from` to `to` (or to now) cannot exceed 31 days.
+
+```json
+{
+  "granularity": "hour",
+  "items": [
+    {
+      "hour": "2026-11-16T19:00:00Z",
+      "store_id": "store_014",
+      "sku": "SKU-88231",
+      "units_sold": 12,
+      "units_restocked": 40,
+      "avg_stock": 22.46,
+      "event_count": 9,
+      "stock_variation": 28
+    }
+  ],
+  "pagination": { "limit": 100, "offset": 0, "returned": 1, "has_more": false },
+  "window": { "from": "2026-11-16T12:30:00Z", "to": null }
+}
+```
+
+`avg_stock` and `stock_variation` are `null` for hours with sales or restocks but no `STOCK_UPDATED` event. `stock_variation` is the closing stock minus the opening stock of the hour.
+
+### Read endpoint errors
+
+| Status | `code` | Meaning |
+|---|---|---|
+| `400` | | Invalid parameter (structured `errors` list, as for events) |
+| `401` | `unauthorized` | Missing or invalid API key |
+| `429` | `rate_limited` | Over the rate limit (reads share the limit with writes) |
+| `503` | `analytics_unavailable` | BigQuery temporarily unavailable; honour `Retry-After` |
+| `500` | `analytics_error` | Query failed; details are in the logs only |
+
+Without `GCP_PROJECT_ID` (local development) both endpoints answer `200` with an empty `items` list.

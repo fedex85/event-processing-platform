@@ -98,7 +98,7 @@ Writes use `insert_rows_json` with `insertId`. Transient failures (HTTP 408/429/
 
 | Limitation | Consequence |
 |---|---|
-| `insertId` deduplication is best effort | Two instances handling the same duplicate at the same moment can both insert. Analytics views must deduplicate by `event_id` (Phase 4) |
+| `insertId` deduplication is best effort | Two instances handling the same duplicate at the same moment can both insert. `v_stock_trends` and the alerts query deduplicate (by `event_id` and `alert_id`) |
 | Duplicate detection is scoped to the same store, SKU and `occurred_at` | An event id reused with different content is treated as a new event |
 | Streaming-buffer rows cannot be `UPDATE`d or `DELETE`d for a while | The pipeline only appends |
 | Duplicate and history lookups cost one query per message | Acceptable at this scale; revisit if volume grows |
@@ -124,6 +124,23 @@ The adapter is behind `EventRepository` / `AlertRepository`, so a Storage Write 
 | Log-only publisher in local development | Lets the API and simulator run with no Google Cloud; refused outside `ENVIRONMENT=local` by configuration validation |
 | Publish and wait for confirmation before answering | `202` means "Pub/Sub has it", which is what makes the system safe to retry |
 
+## Read side (`inventory-api`)
+
+`GET /v1/alerts` and `GET /v1/metrics/stock-trends` read BigQuery through the same ports-and-adapters layout as the rest: routes parse the query string (`api/query_params.py`), `AnalyticsService` resolves the time window and pagination, and an `AnalyticsRepository` port is implemented by `BigQueryAnalyticsRepository` (production) and `EmptyAnalyticsRepository` (local runs without a project). The shared BigQuery gateway and retry helper live in `common/` and are used by both services.
+
+| Decision | Reason |
+|---|---|
+| Every query has a lower time bound (defaults: alerts 7 days, trends 24 hours) | `stock_events` is partitioned by `DATE(occurred_at)` and `stock_alerts` by `DATE(detected_at)`: a bound limits the bytes scanned and the cost |
+| Client values are only ever query parameters | No string interpolation; table names come from validated settings |
+| `has_more` instead of a total | A count would scan the whole window on every call |
+| Fetch `limit + 1` rows | Detects another page without a second query |
+| Alerts deduplicated with `QUALIFY ROW_NUMBER() ... PARTITION BY alert_id` | `insertId` deduplication is best effort |
+| Trends view deduplicates by `(event_id, occurred_at)` | Duplicates share both; keeps partition pruning possible |
+| Few retries, short timeout (read path is synchronous) | A caller is waiting; a 503 with `Retry-After` is better than a slow answer |
+| Reads share the API-key rate limit | A key cannot bypass the limit by using GET |
+
+Known risk: partition pruning through the view is not guaranteed. Check it with `bq query --dry_run` (see the runbook) and, if the bytes processed are too high, replace the view with a table function.
+
 ## Planned
 
-Analytics queries and the `v_stock_trends` view (Phase 4); Pub/Sub retry and dead-letter configuration and Terraform (Phase 5). Table schemas already live in `infra/schemas/`.
+Pub/Sub retry and dead-letter configuration and Terraform (Phase 5). Table schemas already live in `infra/schemas/`; the view definition is `infra/sql/v_stock_trends.sql` (a `templatefile` input for Terraform).

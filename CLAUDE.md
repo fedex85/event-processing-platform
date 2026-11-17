@@ -23,6 +23,8 @@ Run from the repository root with `make` (Linux, macOS, WSL, Git Bash). Override
 
 ## Architecture rules
 
+- BigQuery SQL on the read path (`api/repositories/bigquery.py`) uses query parameters only; never interpolate client input. Table names come from validated settings. The view lives in `infra/sql/v_stock_trends.sql` and `api/tests/test_trends_view_sql.py` keeps it in step with the code.
+
 - `api/` and `processor/` never import each other. Anything both need goes in `common/`.
 - Layers inside a service: `routes` / `consumers` (entry) -> `services` (use cases) -> `domain` / `rules` (pure logic, no I/O) and `publishers` / `repositories` (adapters for Pub/Sub and BigQuery).
 - Google Cloud clients are injected into services, never created inside them, so tests use fakes (`api/tests/fakes.py`, `processor/tests/fakes.py`). Each service's `dependencies.py` builds the real wiring and `create_app(settings, dependencies=...)` accepts a test one.
