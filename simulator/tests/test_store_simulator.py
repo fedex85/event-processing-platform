@@ -1,4 +1,8 @@
+import json
+import threading
+from collections.abc import Iterator
 from datetime import UTC, datetime
+from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from typing import Any
 
 import pytest
@@ -8,8 +12,10 @@ from simulator.store_simulator import (
     SendResult,
     StoreSimulator,
     Summary,
+    http_transport,
     parse_args,
     run,
+    validate_base_url,
 )
 
 FIXED_TIME = datetime(2026, 11, 17, 9, 0, tzinfo=UTC)
@@ -188,3 +194,114 @@ class TestArguments:
     def test_invalid_values_are_rejected(self, flag: list[str]) -> None:
         with pytest.raises(SystemExit):
             parse_args(["--api-key", "k", *flag])
+
+    @pytest.mark.parametrize(
+        "url", ["file:///etc/passwd", "ftp://example.com", "example.com", "http://api.example.com"]
+    )
+    def test_unsafe_urls_are_rejected(self, url: str) -> None:
+        with pytest.raises(SystemExit):
+            parse_args(["--api-key", "k", "--url", url])
+
+
+class TestUrlValidation:
+    @pytest.mark.parametrize(
+        "url",
+        [
+            "http://127.0.0.1:8080",
+            "http://localhost:8080",
+            "http://[::1]:8080",
+            "https://inventory-api-abc.a.run.app",
+        ],
+    )
+    def test_safe_urls_pass(self, url: str) -> None:
+        assert validate_base_url(url) == url
+
+    @pytest.mark.parametrize(
+        "url",
+        ["http://10.0.0.5", "http://inventory.example.com", "file:///tmp/x", "https://", ""],
+    )
+    def test_unsafe_urls_fail(self, url: str) -> None:
+        with pytest.raises(ValueError):
+            validate_base_url(url)
+
+
+class Recorder(BaseHTTPRequestHandler):
+    requests: list[dict[str, Any]]
+
+    def do_POST(self) -> None:
+        length = int(self.headers.get("Content-Length", 0))
+        body = self.rfile.read(length)
+        self.requests.append(
+            {"path": self.path, "key": self.headers.get("X-API-Key"), "body": body}
+        )
+        self.send_response(202)
+        self.send_header("Content-Type", "application/json")
+        self.end_headers()
+        self.wfile.write(json.dumps({"status": "accepted"}).encode())
+
+    def log_message(self, format: str, *args: Any) -> None:
+        pass
+
+
+class Redirector(BaseHTTPRequestHandler):
+    location = ""
+
+    def do_POST(self) -> None:
+        self.send_response(307)
+        self.send_header("Location", self.location)
+        self.end_headers()
+
+    def log_message(self, format: str, *args: Any) -> None:
+        pass
+
+
+def _serve(handler: type[BaseHTTPRequestHandler]) -> Iterator[ThreadingHTTPServer]:
+    server = ThreadingHTTPServer(("127.0.0.1", 0), handler)
+    thread = threading.Thread(target=server.serve_forever, daemon=True)
+    thread.start()
+    try:
+        yield server
+    finally:
+        server.shutdown()
+        server.server_close()
+        thread.join(timeout=5)
+
+
+@pytest.fixture
+def target() -> Iterator[ThreadingHTTPServer]:
+    Recorder.requests = []
+    yield from _serve(Recorder)
+
+
+@pytest.fixture
+def redirector() -> Iterator[ThreadingHTTPServer]:
+    yield from _serve(Redirector)
+
+
+class TestHttpTransport:
+    def test_it_posts_json_with_the_api_key(self, target: ThreadingHTTPServer) -> None:
+        url = f"http://127.0.0.1:{target.server_address[1]}"
+
+        result = http_transport(url, "secret-key")("/v1/events", {"a": 1})
+
+        assert result.status_code == 202
+        assert result.body == {"status": "accepted"}
+        assert Recorder.requests == [
+            {"path": "/v1/events", "key": "secret-key", "body": b'{"a": 1}'}
+        ]
+
+    def test_redirects_are_not_followed_so_the_key_is_not_resent(
+        self, target: ThreadingHTTPServer, redirector: ThreadingHTTPServer
+    ) -> None:
+        Redirector.location = f"http://127.0.0.1:{target.server_address[1]}/stolen"
+        url = f"http://127.0.0.1:{redirector.server_address[1]}"
+
+        result = http_transport(url, "secret-key")("/v1/events", {"a": 1})
+
+        assert result.status_code == 307
+        assert Recorder.requests == []
+
+    def test_a_connection_failure_is_status_zero(self) -> None:
+        result = http_transport("http://127.0.0.1:9", "k", timeout=2)("/v1/events", {})
+
+        assert result.status_code == 0

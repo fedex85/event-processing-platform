@@ -19,16 +19,19 @@ import os
 import random
 import time
 import urllib.error
+import urllib.parse
 import urllib.request
 import uuid
 from collections import Counter
 from collections.abc import Callable, Sequence
 from dataclasses import dataclass, field
 from datetime import UTC, datetime
-from typing import Any
+from http.client import HTTPMessage
+from typing import IO, Any
 
 REGIONS = ("asturias", "madrid", "cataluna", "galicia")
 SOURCE = "store-simulator"
+LOOPBACK_HOSTS = frozenset({"localhost", "127.0.0.1", "::1"})
 
 
 def _utc_now() -> datetime:
@@ -112,8 +115,43 @@ class SendResult:
 Transport = Callable[[str, dict[str, Any]], SendResult]
 
 
+def validate_base_url(url: str) -> str:
+    """Return ``url`` if it is safe to send an API key to, otherwise raise ``ValueError``.
+
+    Only http(s) is allowed, and plain http only for the local machine: over the network the
+    key would travel in clear text.
+    """
+    parsed = urllib.parse.urlparse(url)
+    if parsed.scheme not in {"http", "https"} or not parsed.hostname:
+        raise ValueError("the URL must start with http:// or https://")
+    if parsed.scheme == "http" and parsed.hostname not in LOOPBACK_HOSTS:
+        raise ValueError("plain http is only allowed for localhost; use https:// for a remote API")
+    return url
+
+
+class _RefuseRedirects(urllib.request.HTTPRedirectHandler):
+    """A redirect would resend the X-API-Key header to whatever host the response names."""
+
+    def redirect_request(
+        self,
+        req: urllib.request.Request,
+        fp: IO[bytes],
+        code: int,
+        msg: str,
+        headers: HTTPMessage,
+        newurl: str,
+    ) -> urllib.request.Request | None:
+        return None
+
+
+_OPENER = urllib.request.build_opener(_RefuseRedirects)
+
+
 def http_transport(base_url: str, api_key: str, timeout: float = 10.0) -> Transport:
-    """POST JSON to ``base_url`` + path. Network failures become status code 0."""
+    """POST JSON to ``base_url`` + path. Network failures become status code 0.
+
+    Redirects are not followed: a 3xx is reported like any other non-2xx status.
+    """
 
     def send(path: str, payload: dict[str, Any]) -> SendResult:
         request = urllib.request.Request(
@@ -123,7 +161,7 @@ def http_transport(base_url: str, api_key: str, timeout: float = 10.0) -> Transp
             method="POST",
         )
         try:
-            with urllib.request.urlopen(request, timeout=timeout) as response:
+            with _OPENER.open(request, timeout=timeout) as response:
                 return SendResult(response.status, _parse(response.read()))
         except urllib.error.HTTPError as error:
             return SendResult(error.code, _parse(error.read()))
@@ -192,6 +230,8 @@ def parse_args(argv: Sequence[str] | None = None) -> argparse.Namespace:
     # 127.0.0.1 rather than localhost: on Windows, localhost tries IPv6 first and every
     # request waits about two seconds before falling back to IPv4.
     parser.add_argument("--url", default="http://127.0.0.1:8080", help="API base URL")
+    # Prefer the environment variable: a command-line value shows up in the process list and
+    # in the shell history.
     parser.add_argument("--api-key", default=os.environ.get("SIMULATOR_API_KEY"))
     parser.add_argument("--stores", type=int, default=5)
     parser.add_argument("--skus", type=int, default=20, help="products per store")
@@ -202,6 +242,10 @@ def parse_args(argv: Sequence[str] | None = None) -> argparse.Namespace:
     args = parser.parse_args(argv)
     if not args.api_key:
         parser.error("an API key is required: use --api-key or set SIMULATOR_API_KEY")
+    try:
+        validate_base_url(args.url)
+    except ValueError as error:
+        parser.error(str(error))
     if not 1 <= args.batch_size <= 100:
         parser.error("--batch-size must be between 1 and 100")
     if min(args.stores, args.skus, args.events) < 1:
