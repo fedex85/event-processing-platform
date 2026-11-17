@@ -2,6 +2,8 @@
 
 **English** | [Español](README.es.md)
 
+[![CI](https://github.com/fedex85/event-processing-platform/actions/workflows/ci.yml/badge.svg)](https://github.com/fedex85/event-processing-platform/actions/workflows/ci.yml) ![Python 3.12](https://img.shields.io/badge/python-3.12-blue) [![License: MIT](https://img.shields.io/badge/license-MIT-green.svg)](LICENSE)
+
 An event-driven platform that ingests stock changes from stores, processes them asynchronously and turns them into alerts and trends. It is a portfolio project built to show production-minded backend work: API design, asynchronous processing, spike absorption, idempotency, observability and cloud-native deployment on Google Cloud.
 
 > **Status: all five phases are written, tested and ready to deploy; the infrastructure has not been applied to a real Google Cloud project yet.** The API ingests and publishes events and serves alerts and hourly stock trends; the processor consumes events from Pub/Sub, deduplicates them by `event_id`, applies the alert rules and writes events and alerts to BigQuery. Terraform and the CI/CD pipeline are in place.
@@ -171,6 +173,7 @@ terraform plan -var-file=environments/staging.tfvars
 
 4. Open the **Actions** tab and check that the **CI** workflow passes. The `Deploy` workflow does nothing until the GCP variables exist (see the runbook), so it is fine if it is skipped or fails at first.
 5. Optional: make the repository public from **Settings, General, Danger Zone** once you have reviewed the history.
+6. Configure branch protection, security scanning and the deployment environments with the checklist in [`docs/runbook.md`](docs/runbook.md#github-repository-settings).
 
 Later changes: `git add -A; git commit -m "message"; git push`.
 
@@ -217,6 +220,7 @@ Validation is strict: integers must be real integers, `occurred_at` must be an I
 - **Errors are always JSON.** Unexpected exceptions are logged with a stack trace but never returned to the client.
 - **Timestamps without a timezone are rejected** rather than guessed, because a wrong guess silently corrupts hourly aggregations.
 - **`202` means Pub/Sub has the event.** The API waits for the broker's confirmation, so a client can retry safely; it never reports success for an event that was not published.
+- **Events outside BigQuery's streaming window are refused at the door.** It only streams into partitions 31 days back and 16 ahead, so the API answers `400` for an `occurred_at` outside 30 days back and 15 ahead instead of accepting an event that could never be stored.
 - **Per-process idempotency and rate limiting** (no Redis): both are optimizations in front of Pub/Sub. The processor deduplicates by `event_id` in BigQuery, so they cannot cause data loss or duplicates downstream.
 - **The event row is the commit marker.** The processor writes alerts first and the event last, so a failure at any point is repaired by Pub/Sub's redelivery. Alerts have deterministic ids, so a retry never creates a second alert.
 - **Poison messages get `400`, storage trouble gets `503`.** Pub/Sub's dead-letter policy moves a message aside after N failed deliveries; nothing is silently dropped.
@@ -224,3 +228,7 @@ Validation is strict: integers must be real integers, `occurred_at` must be an I
 - **Cost and safety limits on reads.** Every query has a time bound, client values are only query parameters and BigQuery refuses queries above a bytes-billed cap.
 
 More detail in [`docs/architecture.md`](docs/architecture.md), [`docs/api.md`](docs/api.md) and [`docs/security.md`](docs/security.md) (the technical documents are in English).
+
+## License
+
+[MIT](LICENSE). Contributions: see [`CONTRIBUTING.md`](CONTRIBUTING.md); security reports: [`SECURITY.md`](SECURITY.md).

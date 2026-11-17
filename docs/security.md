@@ -8,13 +8,15 @@ What the services do to protect themselves, and what is deliberately left to the
 |---|---|
 | Authentication | `X-API-Key` on every `/v1` endpoint except health. Keys are compared in constant time against every configured key; outside `ENVIRONMENT=local` each key needs at least 24 characters. Logs carry only a 12-character hash of the key |
 | Authorization of the processor | `/internal/pubsub` has no application-level auth. Terraform deploys the processor without `allUsers` and grants `run.invoker` only to the push subscription's service account |
-| Input validation | Strict Pydantic models, unknown fields rejected, integers and ISO 8601 timestamps strict, strings capped at 255 characters, `metadata` capped at 4096 bytes of plain JSON (no `NaN`) |
+| Input validation | Strict Pydantic models, unknown fields rejected, integers and ISO 8601 timestamps strict, strings capped at 255 characters, `metadata` capped at 4096 bytes of plain JSON (no `NaN`), `occurred_at` limited to 30 days back and 15 ahead so every accepted event can be stored |
 | Request size | `MAX_REQUEST_BYTES` (default 1 MiB) answers `413` before the body is buffered; absurdly nested JSON answers `400` |
 | SQL injection | Client values are only ever BigQuery query parameters. Project, dataset, table and view names come from settings and are validated at start-up by `common.bigquery.qualified_name` |
 | Query cost | `BQ_MAX_BYTES_BILLED` (default 1 GB) makes BigQuery refuse a query that would scan more; the read endpoints also bound their windows and offsets |
 | Error handling | Errors never echo input values or internal details; unexpected errors return a generic 500 and the stack trace stays in the logs |
 | Logging | Structured JSON; query strings are never logged (only the path); trace ids from headers must be 32 hex characters |
-| Responses | `Cache-Control: no-store` and `X-Content-Type-Options: nosniff` |
+| Responses | `Cache-Control: no-store`, `X-Content-Type-Options: nosniff`, `Content-Security-Policy: default-src 'none'; frame-ancestors 'none'` and `Referrer-Policy: no-referrer` |
+| Simulator | Accepts only `http(s)` URLs, plain `http` only for localhost, and never follows redirects, so the API key cannot be sent in clear text or forwarded to another host |
+| Pipeline | CI jobs have timeouts, workflow permissions default to read-only, and `pip-audit` reports vulnerable dependencies (informational) |
 | Containers | Multi-stage build, non-root user, `.dockerignore` excludes `.env`, tests and docs |
 | Deployment identity | GitHub Actions authenticates with Workload Identity Federation (no service account keys), limited to one repository and, when set, one GitHub environment; production needs a reviewer's approval |
 | Secrets | None in the repository; `API_KEYS` is a `SecretStr` and is hidden from `repr`. `.gitignore` covers `.env*`, keys and Terraform state |
@@ -29,6 +31,8 @@ What the services do to protect themselves, and what is deliberately left to the
 | Dependencies are version-ranged, not locked | Builds are not bit-for-bit reproducible | Dependabot now proposes updates weekly; add a lock file (for example `uv lock`) when network access allows |
 | Base image tag is not pinned by digest | Image contents can change between builds | Pin `python:3.12-slim` by digest in the Dockerfiles |
 | GitHub Actions are pinned by major version, not by commit SHA | A compromised tag could run in the pipeline | Pin by SHA; Dependabot keeps them current |
+| The Workload Identity condition matches the repository name, which GitHub says can be reused after a repository is deleted or renamed | Someone could recreate the name and obtain deploy tokens | Match `assertion.repository_id` (immutable) once the repository exists |
+| `v_stock_trends` may scan the whole events table when a query filters on `hour_start` | Cost grows with the table until `BQ_MAX_BYTES_BILLED` starts refusing queries | Run the dry run in the runbook after the first deployment; if pruning fails, replace the view with a table function |
 | The Terraform and the pipeline have never run against a real project | Mistakes show up on first use | Read `terraform plan` before the first apply; start with staging |
 | `insertId` deduplication is best effort | Rare duplicate rows in BigQuery | Reads deduplicate by `event_id` / `alert_id` |
 | The BigQuery adapters have not run against a real project | Behaviour in production is unproven | Run the simulator end to end after the first deployment |

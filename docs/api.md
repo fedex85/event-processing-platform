@@ -33,6 +33,12 @@ X-API-Key: <key>
 | `429` | Rate limit exceeded |
 | `503` | Pub/Sub did not confirm the message; retry |
 
+`occurred_at` must be within the last 30 days and at most 15 days ahead of the API's clock (`MAX_EVENT_AGE_DAYS`, `MAX_EVENT_FUTURE_DAYS`; both capped at those values). BigQuery only streams into partitions within 31 days back and 16 days ahead, so an event outside that range could never be stored; it is rejected with `400` instead of being accepted and dead-lettered later:
+
+```json
+{ "status": "rejected", "errors": [{ "field": "occurred_at", "message": "must be within the last 30 days and at most 15 days in the future" }] }
+```
+
 Accepted:
 
 ```json

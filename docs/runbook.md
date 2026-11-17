@@ -183,6 +183,16 @@ cd infra && terraform fmt -recursive && terraform init -backend=false && terrafo
 
 CI runs the same commands. `pytest` also runs structural checks on the Terraform files.
 
+## GitHub repository settings
+
+Settings a repository file cannot enforce. Do them once, from the repository's **Settings**:
+
+1. **Branches**: add a rule for `main`. Require a pull request, require the status checks `quality`, `terraform` and `images` to pass, and block force pushes.
+2. **Code security**: enable *Dependabot alerts*, *Dependabot security updates*, *Secret scanning* and *Push protection*. In a public repository, also enable *Private vulnerability reporting* (the link in `SECURITY.md` needs it) and *Code scanning* with the default CodeQL setup.
+3. **Environments**: create `staging` and `production`. Add required reviewers to `production`, and define the variables listed under Deploy in each one.
+4. **Actions, General**: set *Workflow permissions* to read-only and leave *Allow GitHub Actions to create and approve pull requests* off.
+5. **About** (top right of the repository page): add the description and topics such as `flask`, `pubsub`, `bigquery`, `cloud-run`, `terraform` and `event-driven`.
+
 ## Dead-letter queue
 
 After `MAX_DELIVERY_ATTEMPTS` (5) failed deliveries Pub/Sub moves a message to `stock-events-dlq`, and an alert fires when it holds messages. The `stock-events-dlq-pull` subscription keeps them for 7 days.
