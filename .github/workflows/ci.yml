@@ -70,7 +70,7 @@ jobs:
 
       # Build only, no push: a broken Dockerfile fails the pull request, not the deployment.
       - name: Build ${{ matrix.service }} image
-        uses: docker/build-push-action@v6
+        uses: docker/build-push-action@v7
         with:
           context: .
           file: docker/${{ matrix.service }}.Dockerfile
