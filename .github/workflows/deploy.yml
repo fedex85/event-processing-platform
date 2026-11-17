@@ -1,0 +1,84 @@
+name: Deploy
+
+# Staging deploys by itself once CI passes on main. Production is started by hand and the
+# job waits for the approval configured on the GitHub "production" environment.
+on:
+  workflow_run:
+    workflows: [CI]
+    types: [completed]
+    branches: [main]
+  workflow_dispatch:
+    inputs:
+      environment:
+        description: Environment to deploy to
+        type: choice
+        options: [staging, production]
+        default: staging
+      ref:
+        description: Branch, tag or commit to deploy
+        required: true
+        default: main
+
+permissions:
+  contents: read
+
+jobs:
+  deploy:
+    if: github.event_name == 'workflow_dispatch' || github.event.workflow_run.conclusion == 'success'
+    runs-on: ubuntu-latest
+    # Variables (GCP_PROJECT_ID, GCP_REGION, GCP_WORKLOAD_IDENTITY_PROVIDER,
+    # GCP_DEPLOYER_SERVICE_ACCOUNT) are defined per GitHub environment.
+    environment: ${{ github.event_name == 'workflow_dispatch' && inputs.environment || 'staging' }}
+    concurrency:
+      group: deploy-${{ github.event_name == 'workflow_dispatch' && inputs.environment || 'staging' }}
+      cancel-in-progress: false
+    permissions:
+      contents: read
+      id-token: write # lets the job exchange its GitHub token for Google credentials
+    env:
+      REGISTRY: ${{ vars.GCP_REGION }}-docker.pkg.dev/${{ vars.GCP_PROJECT_ID }}/inventory
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.workflow_run.head_sha || inputs.ref }}
+
+      - name: Resolve image tag
+        run: echo "TAG=$(git rev-parse --short=12 HEAD)" >> "$GITHUB_ENV"
+
+      - uses: google-github-actions/auth@v2
+        with:
+          workload_identity_provider: ${{ vars.GCP_WORKLOAD_IDENTITY_PROVIDER }}
+          service_account: ${{ vars.GCP_DEPLOYER_SERVICE_ACCOUNT }}
+
+      - uses: google-github-actions/setup-gcloud@v2
+
+      - name: Let Docker push to Artifact Registry
+        run: gcloud auth configure-docker "${{ vars.GCP_REGION }}-docker.pkg.dev" --quiet
+
+      - name: Build and push images
+        run: |
+          for service in api processor; do
+            docker build -f "docker/${service}.Dockerfile" -t "${REGISTRY}/inventory-${service}:${TAG}" .
+            docker push "${REGISTRY}/inventory-${service}:${TAG}"
+          done
+
+      # The processor goes first so it can read anything the new API starts publishing.
+      - name: Deploy inventory-processor
+        uses: google-github-actions/deploy-cloudrun@v2
+        with:
+          service: inventory-processor
+          region: ${{ vars.GCP_REGION }}
+          project_id: ${{ vars.GCP_PROJECT_ID }}
+          image: ${{ env.REGISTRY }}/inventory-processor:${{ env.TAG }}
+
+      - name: Deploy inventory-api
+        id: deploy_api
+        uses: google-github-actions/deploy-cloudrun@v2
+        with:
+          service: inventory-api
+          region: ${{ vars.GCP_REGION }}
+          project_id: ${{ vars.GCP_PROJECT_ID }}
+          image: ${{ env.REGISTRY }}/inventory-api:${{ env.TAG }}
+
+      - name: Smoke test
+        run: curl --fail --silent --show-error --retry 5 --retry-delay 5 "${{ steps.deploy_api.outputs.url }}/v1/health"
