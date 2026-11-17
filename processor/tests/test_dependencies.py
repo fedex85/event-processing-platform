@@ -1,9 +1,9 @@
 import pytest
 
+from common.tests.fakes import FakeGateway
 from processor import dependencies
 from processor.config import ProcessorSettings
 from processor.repositories import BigQueryRepository, GoogleBigQueryGateway, InMemoryRepository
-from processor.tests.fakes import FakeGateway
 
 
 def test_without_a_project_everything_stays_in_memory() -> None:

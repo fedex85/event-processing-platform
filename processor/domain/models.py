@@ -6,25 +6,20 @@ from enum import StrEnum
 from typing import Any
 from uuid import NAMESPACE_URL, UUID, uuid5
 
+from common.alerts import AlertStatus, AlertType, Severity
+
+__all__ = [
+    "Alert",
+    "AlertStatus",
+    "AlertType",
+    "EventLookup",
+    "ProcessingStatus",
+    "Severity",
+    "alert_id_for",
+]
+
 # Fixed namespace so the same (event, alert type) always yields the same alert_id.
 _ALERT_NAMESPACE: UUID = uuid5(NAMESPACE_URL, "https://inventory-event-platform/alerts")
-
-
-class AlertType(StrEnum):
-    LOW_STOCK = "LOW_STOCK"
-    OUT_OF_STOCK = "OUT_OF_STOCK"
-    RAPID_STOCK_DROP = "RAPID_STOCK_DROP"
-
-
-class Severity(StrEnum):
-    LOW = "LOW"
-    MEDIUM = "MEDIUM"
-    HIGH = "HIGH"
-    CRITICAL = "CRITICAL"
-
-
-class AlertStatus(StrEnum):
-    OPEN = "OPEN"
 
 
 class ProcessingStatus(StrEnum):

@@ -4,8 +4,8 @@ from typing import Self
 
 from pydantic import Field, model_validator
 
+from common.retry import RetryPolicy
 from common.settings import BaseServiceSettings
-from processor.repositories.retry import RetryPolicy
 from processor.rules.base import RuleConfig
 
 

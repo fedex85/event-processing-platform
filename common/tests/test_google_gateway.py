@@ -8,7 +8,7 @@ import pytest
 
 pytest.importorskip("google.cloud.bigquery")
 
-from processor.repositories.bigquery import GoogleBigQueryGateway
+from common.bigquery import GoogleBigQueryGateway
 
 
 class FakeRow:

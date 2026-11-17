@@ -13,7 +13,9 @@ from typing import Annotated, Any
 from uuid import uuid4
 
 from pydantic import (
+    AfterValidator,
     BaseModel,
+    BeforeValidator,
     ConfigDict,
     Field,
     StrictInt,
@@ -36,6 +38,20 @@ def _require_utc(value: datetime) -> datetime:
     if value.tzinfo is None or value.utcoffset() is None:
         raise ValueError("must include a timezone offset (e.g. 'Z' or '+01:00')")
     return value.astimezone(UTC)
+
+
+def _require_iso_8601_input(value: Any) -> Any:
+    if isinstance(value, datetime):
+        return value
+    if not isinstance(value, str) or not _ISO_8601_RE.match(value):
+        raise ValueError("must be an ISO 8601 timestamp (e.g. 2026-11-16T19:40:12Z)")
+    return value
+
+
+# A timestamp that must be ISO 8601 text with a timezone; the value is converted to UTC.
+IsoTimestamp = Annotated[
+    datetime, BeforeValidator(_require_iso_8601_input), AfterValidator(_require_utc)
+]
 
 
 class EventType(StrEnum):

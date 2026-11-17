@@ -3,17 +3,13 @@ from datetime import timedelta
 
 import pytest
 
+from common.retry import RetryPolicy
+from common.tests.fakes import FakeGateway, HttpError
 from processor.domain.errors import PermanentStorageError, TransientStorageError
 from processor.domain.models import AlertType
-from processor.repositories.bigquery import (
-    BigQueryRepository,
-    classify_row_errors,
-    is_transient_exception,
-)
-from processor.repositories.retry import RetryPolicy
+from processor.repositories.bigquery import BigQueryRepository, classify_row_errors
 from processor.rules import evaluate_rules
 from processor.tests.factories import OCCURRED_AT, make_context, make_event
-from processor.tests.fakes import FakeGateway, HttpError
 
 WINDOW = timedelta(minutes=15)
 
@@ -229,27 +225,6 @@ def test_save_alerts_with_nothing_to_save_does_not_call_bigquery() -> None:
 
 
 # --- classification ---
-
-
-@pytest.mark.parametrize("code", [408, 429, 500, 502, 503, 504])
-def test_transient_http_codes(code: int) -> None:
-    assert is_transient_exception(HttpError(code)) is True
-
-
-@pytest.mark.parametrize("code", [400, 401, 403, 404, 409])
-def test_permanent_http_codes(code: int) -> None:
-    assert is_transient_exception(HttpError(code)) is False
-
-
-def test_network_trouble_is_transient() -> None:
-    assert is_transient_exception(TimeoutError()) is True
-    assert is_transient_exception(ConnectionResetError()) is True
-
-
-def test_local_file_problems_and_programming_errors_are_not_transient() -> None:
-    assert is_transient_exception(FileNotFoundError()) is False
-    assert is_transient_exception(PermissionError()) is False
-    assert is_transient_exception(ValueError("bug")) is False
 
 
 def test_row_errors_are_transient_only_when_every_reason_is() -> None:

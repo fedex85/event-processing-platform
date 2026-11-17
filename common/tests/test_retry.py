@@ -2,7 +2,7 @@ from collections.abc import Callable, Iterator
 
 import pytest
 
-from processor.repositories.retry import RetryPolicy, call_with_retry
+from common.retry import RetryPolicy, call_with_retry
 
 
 class BoomError(Exception):

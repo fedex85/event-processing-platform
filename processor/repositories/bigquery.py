@@ -18,64 +18,32 @@ Limitations to keep in mind:
   while, so this pipeline only ever appends.
 * It is billed per ingested byte, unlike the Storage Write API's free default stream.
 
-All the Google client code is isolated in ``GoogleBigQueryGateway``. The
-repository only talks to the ``BigQueryGateway`` port, so its logic is tested
+All the Google client code is isolated in ``common.bigquery.GoogleBigQueryGateway``.
+The repository only talks to the ``BigQueryGateway`` port, so its logic is tested
 with a fake.
 """
 
 import json
 import logging
 import re
-from collections.abc import Callable, Mapping, Sequence
+from collections.abc import Callable, Sequence
 from datetime import timedelta
-from typing import Any, Protocol
+from typing import Any
 
+from common.bigquery import BigQueryGateway, QueryParam, RowErrors, is_transient_exception
 from common.events import IngestedStockEvent
+from common.retry import RetryPolicy, call_with_retry
 from processor.domain.errors import PermanentStorageError, TransientStorageError
 from processor.domain.models import Alert, EventLookup, ProcessingStatus
-from processor.repositories.retry import RetryPolicy, call_with_retry
 
 logger = logging.getLogger(__name__)
-
-# (BigQuery type name, value), e.g. ("STRING", "store_014").
-QueryParam = tuple[str, Any]
-RowErrors = Sequence[Mapping[str, Any]]
 
 _PROJECT_ID_RE = re.compile(r"^[a-z][a-z0-9\-:.]{4,61}[a-z0-9]$")
 _IDENTIFIER_RE = re.compile(r"^[A-Za-z_][A-Za-z0-9_]{0,1023}$")
 
-# HTTP statuses that Google documents as worth retrying.
-TRANSIENT_HTTP_CODES = frozenset({408, 429, 500, 502, 503, 504})
 # Row-level reasons from insertAll that are worth retrying. "stopped" only means a
 # sibling row in the same request failed, so it says nothing by itself.
 TRANSIENT_ROW_REASONS = frozenset({"backendError", "internalError", "timeout", "rateLimitExceeded"})
-
-
-class BigQueryGateway(Protocol):
-    def query_rows(
-        self, sql: str, parameters: Mapping[str, QueryParam], *, timeout_seconds: float
-    ) -> list[Mapping[str, Any]]: ...
-
-    def insert_rows(
-        self,
-        table: str,
-        rows: Sequence[Mapping[str, Any]],
-        row_ids: Sequence[str],
-        *,
-        timeout_seconds: float,
-    ) -> RowErrors:
-        """Return the per-row errors reported by BigQuery (empty when all rows were accepted)."""
-        ...
-
-
-def is_transient_exception(exc: BaseException) -> bool:
-    """True for failures that may succeed on a retry: throttling, 5xx, timeouts, network."""
-    code = getattr(exc, "code", None)
-    if isinstance(code, int):
-        return code in TRANSIENT_HTTP_CODES
-    # requests' connection errors and timeouts derive from OSError. Local file problems
-    # (missing or unreadable credentials) are not network trouble and will not heal.
-    return isinstance(exc, OSError) and not isinstance(exc, PermissionError | FileNotFoundError)
 
 
 def classify_row_errors(errors: RowErrors) -> TransientStorageError | PermanentStorageError:
@@ -251,44 +219,3 @@ def alert_to_row(alert: Alert) -> dict[str, Any]:
         "details": json.dumps(alert.details, ensure_ascii=False),
         "status": alert.status.value,
     }
-
-
-class GoogleBigQueryGateway:
-    """The only place that touches ``google.cloud.bigquery``."""
-
-    def __init__(self, client: Any) -> None:
-        self._client = client
-
-    @classmethod
-    def from_project(cls, project_id: str) -> "GoogleBigQueryGateway":
-        # Imported here so tests and tooling work without Google Cloud libraries or credentials.
-        from google.cloud import bigquery
-
-        return cls(bigquery.Client(project=project_id))
-
-    def query_rows(
-        self, sql: str, parameters: Mapping[str, QueryParam], *, timeout_seconds: float
-    ) -> list[Mapping[str, Any]]:
-        from google.cloud import bigquery
-
-        job_config = bigquery.QueryJobConfig(
-            query_parameters=[
-                bigquery.ScalarQueryParameter(name, type_name, value)
-                for name, (type_name, value) in parameters.items()
-            ]
-        )
-        job = self._client.query(sql, job_config=job_config, timeout=timeout_seconds)
-        return [dict(row.items()) for row in job.result(timeout=timeout_seconds)]
-
-    def insert_rows(
-        self,
-        table: str,
-        rows: Sequence[Mapping[str, Any]],
-        row_ids: Sequence[str],
-        *,
-        timeout_seconds: float,
-    ) -> RowErrors:
-        errors: RowErrors = self._client.insert_rows_json(
-            table, list(rows), row_ids=list(row_ids), timeout=timeout_seconds
-        )
-        return errors

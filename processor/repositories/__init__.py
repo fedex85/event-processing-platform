@@ -1,9 +1,10 @@
 """Storage adapters for the processor."""
 
+from common.bigquery import GoogleBigQueryGateway
+from common.retry import RetryPolicy
 from processor.repositories.base import AlertRepository, EventRepository
-from processor.repositories.bigquery import BigQueryRepository, GoogleBigQueryGateway
+from processor.repositories.bigquery import BigQueryRepository
 from processor.repositories.memory import InMemoryRepository
-from processor.repositories.retry import RetryPolicy
 
 __all__ = [
     "AlertRepository",
